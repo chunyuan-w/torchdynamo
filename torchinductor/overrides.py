@@ -59,7 +59,10 @@ def fuse_eltwise(gm: torch.fx.GraphModule):
                 if len(node.args[0].users) > 1:  # Output of bn is used by other nodes
                     continue
                 linear = modules[node.args[0].target]
-                if not linear.training and linear.weight.device ==torch.device('cpu'):
+                relu = modules[node.target]
+                eval_mode = not linear.training and not relu.training
+                # TODO: check device of input, weight and bias
+                if eval_mode and linear.weight.device == torch.device('cpu'):
                     fused_linear = fuse_linear_relu_train(linear)
                     replace_node_module(node.args[0], modules, fused_linear)
                     node.replace_all_uses_with(node.args[0])
