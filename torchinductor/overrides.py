@@ -29,35 +29,26 @@ class AutogradMonkeypatch(TorchFunctionMode):
 patch_functions = AutogradMonkeypatch
 
 
-class MyConvReLU(torch.nn.Conv2d):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1,
-                 padding=0, dilation=1, groups=1, bias=True,
-                 padding_mode='zeros', device=None, dtype=None):
-        super(MyConvReLU, self).__init__(in_channels, out_channels, kernel_size, stride=stride,
-            padding=padding, dilation=dilation, groups=groups, bias=bias,
-            padding_mode=padding_mode, device=device, dtype=dtype)
+class MyLinearReLU(torch.nn.Linear):
+    def __init__(self, in_features, out_features, bias=True, device=None, dtype=None):
+        super(MyLinearReLU, self).__init__(in_features, out_features, bias=bias,
+            device=device, dtype=dtype)
     
     def forward(self, input):
         print("%" * 50)
-        y = super(MyConvReLU, self).forward(input)
+        y = super(MyLinearReLU, self).forward(input)
         y = F.relu(y)
         return y
 
-def fuse_bn_relu_train(bn):
+def fuse_linear_relu_train(bn):
     # TODO: check what is bn.bias is bias is False in the original conv
-    bn_relu = MyConvReLU(bn.in_channels,
-                              bn.out_channels,
-                              bn.kernel_size,
-                              bn.stride,
-                              bn.padding,
-                              bn.dilation,
-                              bn.groups,
+    linear_relu = MyLinearReLU(bn.in_features,
+                              bn.out_features,
                               bn.bias is not None,
-                              bn.padding_mode,
                               bn.weight.device,
                               bn.weight.dtype)
-    bn_relu.__dict__ = copy.deepcopy(bn.__dict__)
-    return bn_relu
+    linear_relu.__dict__ = copy.deepcopy(bn.__dict__)
+    return linear_relu
 
 def replace_fx(gm: torch.fx.GraphModule):
     # Sometimes patch_functions() misses things already in the graph
@@ -76,17 +67,15 @@ def replace_fx(gm: torch.fx.GraphModule):
     modules = dict(gm.named_modules())
     new_graph = copy.deepcopy(gm.graph)
 
-    patterns = [(torch.nn.Conv2d, torch.nn.ReLU)]
+    patterns = [(torch.nn.Linear, torch.nn.ReLU)]
     for pattern in patterns:
         for node in new_graph.nodes:
             if matches_module_pattern(pattern, node, modules):
                 if len(node.args[0].users) > 1:  # Output of bn is used by other nodes
                     continue
                 bn = modules[node.args[0].target]
-                print("bn is: ")
-                print(bn)
                 # only support bn+relu fusion path for training and affine case.
-                fused_bn = fuse_bn_relu_train(bn)
+                fused_bn = fuse_linear_relu_train(bn)
                 replace_node_module(node.args[0], modules, fused_bn)
                 node.replace_all_uses_with(node.args[0])
                 new_graph.erase_node(node)
