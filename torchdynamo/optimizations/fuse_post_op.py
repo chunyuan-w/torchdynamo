@@ -14,7 +14,7 @@ class LinearReLU(torch.nn.Linear):
         y = torch.ops.mkldnn_prepacked.linear_relu(input, self.weight, self.bias)
         return y
 
-def fuse_linear_relu_train(linear):
+def fuse_linear_relu_eval(linear):
     linear_relu = LinearReLU(linear.in_features,
                               linear.out_features,
                               linear.bias is not None,
@@ -38,7 +38,7 @@ def fuse_post_op(gm, example_inputs):
                 eval_mode = not linear.training and not relu.training
                 # TODO: check device of input, weight and bias
                 if eval_mode and linear.weight.device == torch.device('cpu'):
-                    fused_linear = fuse_linear_relu_train(linear)
+                    fused_linear = fuse_linear_relu_eval(linear)
                     replace_node_module(node.args[0], modules, fused_linear)
                     node.replace_all_uses_with(node.args[0])
                     new_graph.erase_node(node)
