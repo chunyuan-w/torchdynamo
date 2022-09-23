@@ -3235,22 +3235,18 @@ if HAS_CPU:
                 # v = v.to(torch.bfloat16)
                 # mod = mod.to(torch.bfloat16)
 
-                print("#" * 50)
                 result = fn(v)
-                print("#" * 50)
                 assert same(result, mod(v))
-
-                print("run")
-                fn(v)
-                fn(v)
-
+                # TODO: how to check fusion
 
             for input_shape in [
                 [2, 3, 10],
-                [2, 10]]:
+                [2, 10]
+            ]:
                 for bias in [
                     True,
-                    False]:
+                    False
+                ]:
                     _test_conv_relu(bias, input_shape)
 
         def test_inplace_squeeze_needed(self):
