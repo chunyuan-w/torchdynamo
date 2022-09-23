@@ -59,12 +59,12 @@ def fuse_eltwise(gm: torch.fx.GraphModule):
             if matches_module_pattern(pattern, node, modules):
                 if len(node.args[0].users) > 1:  # Output of bn is used by other nodes
                     continue
-                bn = modules[node.args[0].target]
-                # only support bn+relu fusion path for training and affine case.
-                fused_bn = fuse_linear_relu_train(bn)
-                replace_node_module(node.args[0], modules, fused_bn)
-                node.replace_all_uses_with(node.args[0])
-                new_graph.erase_node(node)
+                linear = modules[node.args[0].target]
+                if not linear.training and linear.weight.device ==torch.device('cpu'):
+                    fused_linear = fuse_linear_relu_train(linear)
+                    replace_node_module(node.args[0], modules, fused_linear)
+                    node.replace_all_uses_with(node.args[0])
+                    new_graph.erase_node(node)
     gm =  fx.GraphModule(gm, new_graph)    
     return gm
 
