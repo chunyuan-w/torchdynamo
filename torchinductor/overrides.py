@@ -6,6 +6,9 @@ import torch
 from torch import _prims
 from torch.fx.experimental.proxy_tensor import ProxyTorchDispatchMode
 from torch.overrides import TorchFunctionMode
+from torch.ao.quantization.quantize_fx import (
+    fuse_fx,
+)
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +25,12 @@ class AutogradMonkeypatch(TorchFunctionMode):
 patch_functions = AutogradMonkeypatch
 
 
+class MyConvReLU(torch.nn.Module):
+    pass
+
+def my_conv_relu_fuser(conv, relu):
+    return MyConvReLU()
+
 def replace_fx(gm: torch.fx.GraphModule):
     # Sometimes patch_functions() misses things already in the graph
     for node in reversed(list(gm.graph.nodes)):
@@ -33,6 +42,14 @@ def replace_fx(gm: torch.fx.GraphModule):
                     )
                 )
             gm.graph.erase_node(node)
+    
+    gm = fuse_fx(gm, fuse_custom_config={
+        "additional_fuser_method_mapping": {
+            (torch.nn.Conv2d, torch.nn.ReLU): my_conv_relu_fuser
+        }
+    })
+    
+    
     gm.recompile()
     return gm
 
