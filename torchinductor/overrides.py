@@ -1,6 +1,7 @@
 import logging
 import random
 import weakref
+import copy
 
 import torch
 from torch import _prims
@@ -9,6 +10,9 @@ from torch.overrides import TorchFunctionMode
 from torch.ao.quantization.quantize_fx import (
     fuse_fx,
 )
+from torch.nn import functional as F
+import torch.fx as fx
+from torch.fx.experimental.optimization import matches_module_pattern, replace_node_module
 
 log = logging.getLogger(__name__)
 
@@ -25,11 +29,35 @@ class AutogradMonkeypatch(TorchFunctionMode):
 patch_functions = AutogradMonkeypatch
 
 
-class MyConvReLU(torch.nn.Module):
-    pass
+class MyConvReLU(torch.nn.Conv2d):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1,
+                 padding=0, dilation=1, groups=1, bias=True,
+                 padding_mode='zeros', device=None, dtype=None):
+        super(MyConvReLU, self).__init__(in_channels, out_channels, kernel_size, stride=stride,
+            padding=padding, dilation=dilation, groups=groups, bias=bias,
+            padding_mode=padding_mode, device=device, dtype=dtype)
+    
+    def forward(self, input):
+        print("%" * 50)
+        y = super(MyConvReLU, self).forward(input)
+        y = F.relu(y)
+        return y
 
-def my_conv_relu_fuser(conv, relu):
-    return MyConvReLU()
+def fuse_bn_relu_train(bn):
+    # TODO: check what is bn.bias is bias is False in the original conv
+    bn_relu = MyConvReLU(bn.in_channels,
+                              bn.out_channels,
+                              bn.kernel_size,
+                              bn.stride,
+                              bn.padding,
+                              bn.dilation,
+                              bn.groups,
+                              bn.bias is not None,
+                              bn.padding_mode,
+                              bn.weight.device,
+                              bn.weight.dtype)
+    bn_relu.__dict__ = copy.deepcopy(bn.__dict__)
+    return bn_relu
 
 def replace_fx(gm: torch.fx.GraphModule):
     # Sometimes patch_functions() misses things already in the graph
@@ -43,14 +71,26 @@ def replace_fx(gm: torch.fx.GraphModule):
                 )
             gm.graph.erase_node(node)
     
-    gm = fuse_fx(gm, fuse_custom_config={
-        "additional_fuser_method_mapping": {
-            (torch.nn.Conv2d, torch.nn.ReLU): my_conv_relu_fuser
-        }
-    })
-    
-    
     gm.recompile()
+
+    modules = dict(gm.named_modules())
+    new_graph = copy.deepcopy(gm.graph)
+
+    patterns = [(torch.nn.Conv2d, torch.nn.ReLU)]
+    for pattern in patterns:
+        for node in new_graph.nodes:
+            if matches_module_pattern(pattern, node, modules):
+                if len(node.args[0].users) > 1:  # Output of bn is used by other nodes
+                    continue
+                bn = modules[node.args[0].target]
+                print("bn is: ")
+                print(bn)
+                # only support bn+relu fusion path for training and affine case.
+                fused_bn = fuse_bn_relu_train(bn)
+                replace_node_module(node.args[0], modules, fused_bn)
+                node.replace_all_uses_with(node.args[0])
+                new_graph.erase_node(node)
+    gm =  fx.GraphModule(gm, new_graph)    
     return gm
 
 
