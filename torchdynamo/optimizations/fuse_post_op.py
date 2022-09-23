@@ -35,9 +35,13 @@ def fuse_post_op(gm, example_inputs):
                     continue
                 linear = modules[node.args[0].target]
                 relu = modules[node.target]
-                eval_mode = not linear.training and not relu.training
-                # TODO: check device of input, weight and bias
-                if eval_mode and linear.weight.device == torch.device('cpu'):
+                eval_mode = all(not n.training for n in [linear, relu])
+
+                tensors = example_inputs + [linear.weight]
+                if linear.bias is not None:
+                    tensors.append(linear.bias)
+                is_cpu = all(x.device == torch.device('cpu') for x in tensors)
+                if eval_mode and is_cpu:
                     fused_linear = fuse_linear_relu_eval(linear)
                     replace_node_module(node.args[0], modules, fused_linear)
                     node.replace_all_uses_with(node.args[0])
