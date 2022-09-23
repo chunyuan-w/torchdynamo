@@ -49,20 +49,7 @@ def fuse_linear_relu_train(bn):
     linear_relu.__dict__ = copy.deepcopy(bn.__dict__)
     return linear_relu
 
-def replace_fx(gm: torch.fx.GraphModule):
-    # Sometimes patch_functions() misses things already in the graph
-    for node in reversed(list(gm.graph.nodes)):
-        if node.op == "call_function" and node.target in replacements:
-            with gm.graph.inserting_before(node):
-                node.replace_all_uses_with(
-                    gm.graph.call_function(
-                        replacements[node.target], node.args, node.kwargs
-                    )
-                )
-            gm.graph.erase_node(node)
-    
-    gm.recompile()
-
+def fuse_eltwise(gm: torch.fx.GraphModule):
     modules = dict(gm.named_modules())
     new_graph = copy.deepcopy(gm.graph)
 
@@ -81,6 +68,22 @@ def replace_fx(gm: torch.fx.GraphModule):
     gm =  fx.GraphModule(gm, new_graph)    
     return gm
 
+def replace_fx(gm: torch.fx.GraphModule):
+    # Sometimes patch_functions() misses things already in the graph
+    for node in reversed(list(gm.graph.nodes)):
+        if node.op == "call_function" and node.target in replacements:
+            with gm.graph.inserting_before(node):
+                node.replace_all_uses_with(
+                    gm.graph.call_function(
+                        replacements[node.target], node.args, node.kwargs
+                    )
+                )
+            gm.graph.erase_node(node)
+    
+    gm.recompile()
+
+    gm = fuse_eltwise(gm)   
+    return gm
 
 def _philox_rand_like_meta(input, seed, offset):
     return _prims.TensorMeta(input)
