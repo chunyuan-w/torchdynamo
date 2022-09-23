@@ -36,8 +36,7 @@ class MyLinearReLU(torch.nn.Linear):
     
     def forward(self, input):
         print("%" * 50)
-        y = super(MyLinearReLU, self).forward(input)
-        y = F.relu(y)
+        y = torch.ops.mkldnn_prepacked.linear_relu(input, self.weight, self.bias)
         return y
 
 def fuse_linear_relu_train(bn):
