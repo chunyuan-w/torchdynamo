@@ -6,9 +6,6 @@ import torch
 from torch import _prims
 from torch.fx.experimental.proxy_tensor import ProxyTorchDispatchMode
 from torch.overrides import TorchFunctionMode
-from torch.ao.quantization.quantize_fx import (
-    fuse_fx,
-)
 
 log = logging.getLogger(__name__)
 
@@ -36,10 +33,9 @@ def replace_fx(gm: torch.fx.GraphModule):
                     )
                 )
             gm.graph.erase_node(node)
-    
     gm.recompile()
-
     return gm
+
 
 def _philox_rand_like_meta(input, seed, offset):
     return _prims.TensorMeta(input)
