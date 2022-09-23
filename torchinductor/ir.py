@@ -2864,13 +2864,17 @@ class LinearReLU(ExternKernelAlloc):
         *m, k1 = x.get_size()
         k2, n = w.get_size()
 
+        inputs = [x, w]
+        if b is not None:
+            inputs.append(b)
+
         return LinearReLU(
             layout=FlexibleLayout(
                 device=x.get_device(),
                 dtype=x.get_dtype(),
                 size=list(m) + [n],
             ),
-            inputs=[x, w, b],
+            inputs=inputs,
             kernel=kernel,)
     
     def apply_constraint(self):
