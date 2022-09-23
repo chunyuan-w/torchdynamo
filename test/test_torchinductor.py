@@ -3219,6 +3219,40 @@ if HAS_CPU:
     CommonTemplate.install(CpuTests, "cpu")
 
     class CPUReproTests(TestCase):
+        def test_conv_relu(self):
+            def _test_conv_relu(bias, input_shape):
+                mod = torch.nn.Sequential(
+                    torch.nn.Linear(input_shape[-1], 10, bias=bias),
+                    torch.nn.ReLU(),
+                ).eval()            
+
+                @torchdynamo.optimize("inductor")
+                def fn(x):
+                    return mod(x)
+
+                v = torch.randn(input_shape)
+
+                # v = v.to(torch.bfloat16)
+                # mod = mod.to(torch.bfloat16)
+
+                print("#" * 50)
+                result = fn(v)
+                print("#" * 50)
+                assert same(result, mod(v))
+
+                print("run")
+                fn(v)
+                fn(v)
+
+
+            for input_shape in [
+                [2, 3, 10],
+                [2, 10]]:
+                for bias in [
+                    True,
+                    False]:
+                    _test_conv_relu(bias, input_shape)
+
         def test_inplace_squeeze_needed(self):
             mod = torch.nn.Sequential(
                 torch.nn.Linear(10, 10),
