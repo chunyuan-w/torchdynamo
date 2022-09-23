@@ -39,14 +39,13 @@ class MyLinearReLU(torch.nn.Linear):
         y = torch.ops.mkldnn_prepacked.linear_relu(input, self.weight, self.bias)
         return y
 
-def fuse_linear_relu_train(bn):
-    # TODO: check what is bn.bias is bias is False in the original conv
-    linear_relu = MyLinearReLU(bn.in_features,
-                              bn.out_features,
-                              bn.bias is not None,
-                              bn.weight.device,
-                              bn.weight.dtype)
-    linear_relu.__dict__ = copy.deepcopy(bn.__dict__)
+def fuse_linear_relu_train(linear):
+    linear_relu = MyLinearReLU(linear.in_features,
+                              linear.out_features,
+                              linear.bias is not None,
+                              linear.weight.device,
+                              linear.weight.dtype)
+    linear_relu.__dict__ = copy.deepcopy(linear.__dict__)
     return linear_relu
 
 def fuse_eltwise(gm: torch.fx.GraphModule):
