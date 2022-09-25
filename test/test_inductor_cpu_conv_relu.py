@@ -8,6 +8,8 @@ torchdynamo.config.raise_on_backend_error = False
 def _eltwise_list():
     eltwise_list = [
         [nn.ReLU(), 'aten::relu'],
+        [nn.Sigmoid(), 'aten::sigmoid'],
+
         # [torch.relu, 'aten::relu'], # TODO support method relu
         # [torch.sigmoid, 'aten::sigmoid'],
         # [torch.tanh, 'aten::tanh'],
