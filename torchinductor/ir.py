@@ -2859,13 +2859,13 @@ class LinearReLU(ExternKernelAlloc):
         )
     
     @classmethod
-    def create(cls, x, w, b, attr, scalars):
+    def create(cls, x, w, b, attr, scalars, algorithm):
         kernel = "torch.ops.mkldnn_prepacked.linear_relu"
         *m, k1 = x.get_size()
         k2, n = w.get_size()
 
         inputs = [x, w]
-        constant_args = [attr, scalars]
+        constant_args = [attr, scalars, algorithm]
         if b is not None:
             inputs.append(b)
         else:

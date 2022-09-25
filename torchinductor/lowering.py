@@ -755,8 +755,8 @@ def bmm(a: TensorBox, b: TensorBox):
 
 
 @register_lowering(torch.ops.mkldnn_prepacked.linear_relu)
-def linear_relu(x: TensorBox, w: TensorBox, b: TensorBox, attr, scalars):
-    return TensorBox.create(ir.LinearReLU.create(x, w, b, attr, scalars))
+def linear_relu(x: TensorBox, w: TensorBox, b: TensorBox, attr, scalars, algorithm):
+    return TensorBox.create(ir.LinearReLU.create(x, w, b, attr, scalars, algorithm))
 
 def fallback_handler(kernel):
     fallbacks.add(kernel)

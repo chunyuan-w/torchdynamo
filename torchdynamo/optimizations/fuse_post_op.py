@@ -11,7 +11,7 @@ class LinearEltwiseOneOperand(torch.nn.Linear):
             device=device, dtype=dtype)
     
     def forward(self, input):
-        y = torch.ops.mkldnn_prepacked.linear_relu(input, self.weight, self.bias, self.attr, self.scalars)
+        y = torch.ops.mkldnn_prepacked.linear_relu(input, self.weight, self.bias, self.attr, self.scalars, self.algorithm)
         return y
 
 def fuse_linear_eltwise_eval(linear, attr):
@@ -24,6 +24,7 @@ def fuse_linear_eltwise_eval(linear, attr):
     # TODO: set this in init func is not working, due to copy __dict__??
     linear_relu.attr = attr
     linear_relu.scalars = []
+    linear_relu.algorithm = ""
     return linear_relu
 
 def fuse_post_op(gm, example_inputs):
