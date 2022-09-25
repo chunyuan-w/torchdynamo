@@ -32,10 +32,14 @@ def fuse_post_op(gm, example_inputs):
     patterns = [
         (torch.nn.Linear, torch.nn.ReLU),
         (torch.nn.Linear, torch.nn.Sigmoid),
+        (torch.nn.Linear, torch.nn.Tanh),
+        (torch.nn.Linear, torch.nn.Hardswish),
     ]
     attr_names = [
         "relu",
         "sigmoid",
+        "tanh",
+        "hardswish",
     ]
     assert len(patterns) == len(attr_names), "pattern and replacement length should be equal"
     for pattern, attr_name in zip(patterns, attr_names):

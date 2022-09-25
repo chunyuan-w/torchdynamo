@@ -9,6 +9,8 @@ def _eltwise_list():
     eltwise_list = [
         [nn.ReLU(), 'aten::relu'],
         [nn.Sigmoid(), 'aten::sigmoid'],
+        [nn.Tanh(), 'aten::tanh'],
+        [nn.Hardswish(), 'aten::hardswish'],
 
         # [torch.relu, 'aten::relu'], # TODO support method relu
         # [torch.sigmoid, 'aten::sigmoid'],
