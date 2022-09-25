@@ -30,6 +30,8 @@ def fuse_linear_eltwise_eval(linear, eltwise, attr):
         linear_relu.scalars = [eltwise.negative_slope]
     if attr == "hardtanh":
         linear_relu.scalars = [eltwise.min_val, eltwise.max_val]
+    if attr == "gelu":
+        linear_relu.algorithm = eltwise.approximate
     return linear_relu
 
 def fuse_post_op(gm, example_inputs):
@@ -43,6 +45,7 @@ def fuse_post_op(gm, example_inputs):
         (torch.nn.Linear, torch.nn.Hardswish),
         (torch.nn.Linear, torch.nn.LeakyReLU),
         (torch.nn.Linear, torch.nn.Hardtanh),
+        (torch.nn.Linear, torch.nn.GELU),
     ]
     attr_names = [
         "relu",
@@ -51,6 +54,7 @@ def fuse_post_op(gm, example_inputs):
         "hardswish",
         "leaky_relu",
         "hardtanh",
+        "gelu",
     ]
     assert len(patterns) == len(attr_names), "pattern and replacement length should be equal"
     for pattern, attr_name in zip(patterns, attr_names):
