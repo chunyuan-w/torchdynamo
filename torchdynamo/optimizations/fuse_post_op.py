@@ -14,7 +14,22 @@ class LinearEltwise(torch.nn.Linear):
         y = torch.ops.mkldnn_prepacked.linear_eltwise(input, self.weight, self.bias, self.attr, self.scalars, self.algorithm)
         return y
 
-def fuse_linear_eltwise_eval(linear, eltwise, attr):
+    def update_status(self, eltwise, attr, extra_inputs):
+        self.attr = attr
+
+        scalars = []
+        for item in extra_inputs.scalars:
+            assert hasattr(eltwise, item)
+            scalars.append(getattr(eltwise, item))
+        self.scalars = scalars
+
+        algorithm = ""
+        if extra_inputs.algorithm:
+            assert hasattr(eltwise, extra_inputs.algorithm)
+            algorithm = getattr(eltwise, extra_inputs.algorithm) 
+        self.algorithm = algorithm
+
+def fuse_linear_eltwise_eval(linear, eltwise, attr, extra_inputs):
     linear_eltwise = LinearEltwise(linear.in_features,
                               linear.out_features,
                               linear.bias is not None,
@@ -22,17 +37,23 @@ def fuse_linear_eltwise_eval(linear, eltwise, attr):
                               linear.weight.dtype)
     linear_eltwise.__dict__ = copy.deepcopy(linear.__dict__)
     # TODO: set this in init func is not working, due to copy __dict__??
-    linear_eltwise.attr = attr
-    linear_eltwise.scalars = []
-    linear_eltwise.algorithm = ""
-    # TODO: define this behavior with a dict?
-    if attr == "leaky_relu":
-        linear_eltwise.scalars = [eltwise.negative_slope]
-    elif attr == "hardtanh":
-        linear_eltwise.scalars = [eltwise.min_val, eltwise.max_val]
-    elif attr == "gelu":
-        linear_eltwise.algorithm = eltwise.approximate
+    linear_eltwise.update_status(eltwise, attr, extra_inputs)
     return linear_eltwise
+
+class EltwiseFusionOp:
+    def __init__(self, scalars=[], algorithm=""):
+        self.scalars = scalars
+        self.algorithm = algorithm
+
+attr_names = {
+    "relu": EltwiseFusionOp(),
+    "sigmoid": EltwiseFusionOp(),
+    "tanh": EltwiseFusionOp(),
+    "hardswish": EltwiseFusionOp(),
+    "leaky_relu": EltwiseFusionOp(scalars=["negative_slope"]),
+    "hardtanh": EltwiseFusionOp(scalars=["min_val", "max_val"]),
+    "gelu": EltwiseFusionOp(algorithm="approximate"),
+}
 
 def fuse_post_op(gm, example_inputs):
     modules = dict(gm.named_modules())
@@ -47,20 +68,12 @@ def fuse_post_op(gm, example_inputs):
         (torch.nn.Linear, torch.nn.Hardtanh),
         (torch.nn.Linear, torch.nn.GELU),
     ]
-    attr_names = [
-        "relu",
-        "sigmoid",
-        "tanh",
-        "hardswish",
-        "leaky_relu",
-        "hardtanh",
-        "gelu",
-    ]
+
     assert len(patterns) == len(attr_names), "pattern and replacement length should be equal"
     for pattern, attr_name in zip(patterns, attr_names):
         for node in new_graph.nodes:
             if matches_module_pattern(pattern, node, modules):
-                if len(node.args[0].users) > 1:  # Output of bn is used by other nodes
+                if len(node.args[0].users) > 1:  # Output of linear is used by other nodes
                     continue
                 linear = modules[node.args[0].target]
                 eltwise = modules[node.target]
@@ -71,7 +84,7 @@ def fuse_post_op(gm, example_inputs):
                     tensors.append(linear.bias)
                 is_cpu = all(x.device == torch.device('cpu') for x in tensors)
                 if eval_mode and is_cpu:
-                    fused_linear = fuse_linear_eltwise_eval(linear, eltwise, attr_name)
+                    fused_linear = fuse_linear_eltwise_eval(linear, eltwise, attr_name, attr_names[attr_name])
                     replace_node_module(node.args[0], modules, fused_linear)
                     node.replace_all_uses_with(node.args[0])
                     new_graph.erase_node(node)
