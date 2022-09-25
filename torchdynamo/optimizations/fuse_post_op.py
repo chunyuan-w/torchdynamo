@@ -5,9 +5,9 @@ import torch.fx as fx
 from torch.fx.experimental.optimization import matches_module_pattern, replace_node_module
 
 
-class LinearEltwiseOneOperand(torch.nn.Linear):
+class LinearEltwise(torch.nn.Linear):
     def __init__(self, in_features, out_features, bias=True, device=None, dtype=None):
-        super(LinearEltwiseOneOperand, self).__init__(in_features, out_features, bias=bias,
+        super(LinearEltwise, self).__init__(in_features, out_features, bias=bias,
             device=device, dtype=dtype)
     
     def forward(self, input):
@@ -15,24 +15,24 @@ class LinearEltwiseOneOperand(torch.nn.Linear):
         return y
 
 def fuse_linear_eltwise_eval(linear, eltwise, attr):
-    linear_relu = LinearEltwiseOneOperand(linear.in_features,
+    linear_eltwise = LinearEltwise(linear.in_features,
                               linear.out_features,
                               linear.bias is not None,
                               linear.weight.device,
                               linear.weight.dtype)
-    linear_relu.__dict__ = copy.deepcopy(linear.__dict__)
+    linear_eltwise.__dict__ = copy.deepcopy(linear.__dict__)
     # TODO: set this in init func is not working, due to copy __dict__??
-    linear_relu.attr = attr
-    linear_relu.scalars = []
-    linear_relu.algorithm = ""
+    linear_eltwise.attr = attr
+    linear_eltwise.scalars = []
+    linear_eltwise.algorithm = ""
     # TODO: define this behavior with a dict?
     if attr == "leaky_relu":
-        linear_relu.scalars = [eltwise.negative_slope]
-    if attr == "hardtanh":
-        linear_relu.scalars = [eltwise.min_val, eltwise.max_val]
-    if attr == "gelu":
-        linear_relu.algorithm = eltwise.approximate
-    return linear_relu
+        linear_eltwise.scalars = [eltwise.negative_slope]
+    elif attr == "hardtanh":
+        linear_eltwise.scalars = [eltwise.min_val, eltwise.max_val]
+    elif attr == "gelu":
+        linear_eltwise.algorithm = eltwise.approximate
+    return linear_eltwise
 
 def fuse_post_op(gm, example_inputs):
     modules = dict(gm.named_modules())
