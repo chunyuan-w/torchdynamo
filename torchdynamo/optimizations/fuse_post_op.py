@@ -11,7 +11,7 @@ class LinearEltwise(torch.nn.Linear):
             device=device, dtype=dtype)
     
     def forward(self, input):
-        y = torch.ops.mkldnn_prepacked.linear_relu(input, self.weight, self.bias, self.attr, self.scalars, self.algorithm)
+        y = torch.ops.mkldnn_prepacked.linear_eltwise(input, self.weight, self.bias, self.attr, self.scalars, self.algorithm)
         return y
 
 def fuse_linear_eltwise_eval(linear, eltwise, attr):

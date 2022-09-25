@@ -2841,14 +2841,14 @@ class MultiOutput(ExternKernel):
         return False
 
 class LinearReLU(ExternKernelAlloc):
-    kernel = "torch.ops.mkldnn_prepacked.linear_relu"
+    kernel = "torch.ops.mkldnn_prepacked.linear_eltwise"
 
     def __init__(
         self,
         layout,
         inputs,
         constant_args=(),
-        kernel="torch.ops.mkldnn_prepacked.linear_relu",
+        kernel="torch.ops.mkldnn_prepacked.linear_eltwise",
     ):
         super().__init__(layout, inputs, constant_args)
         self.kernel = kernel
@@ -2860,7 +2860,7 @@ class LinearReLU(ExternKernelAlloc):
     
     @classmethod
     def create(cls, x, w, b, attr, scalars, algorithm):
-        kernel = "torch.ops.mkldnn_prepacked.linear_relu"
+        kernel = "torch.ops.mkldnn_prepacked.linear_eltwise"
         *m, k1 = x.get_size()
         k2, n = w.get_size()
 
