@@ -11,6 +11,7 @@ def _eltwise_list():
         [nn.Sigmoid(), 'aten::sigmoid'],
         [nn.Tanh(), 'aten::tanh'],
         [nn.Hardswish(), 'aten::hardswish'],
+        [nn.LeakyReLU(0.1, inplace=False), 'aten::leaky_relu'],
 
         # [torch.relu, 'aten::relu'], # TODO support method relu
         # [torch.sigmoid, 'aten::sigmoid'],

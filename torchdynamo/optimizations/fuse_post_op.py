@@ -14,7 +14,7 @@ class LinearEltwiseOneOperand(torch.nn.Linear):
         y = torch.ops.mkldnn_prepacked.linear_relu(input, self.weight, self.bias, self.attr, self.scalars, self.algorithm)
         return y
 
-def fuse_linear_eltwise_eval(linear, attr):
+def fuse_linear_eltwise_eval(linear, eltwise, attr):
     linear_relu = LinearEltwiseOneOperand(linear.in_features,
                               linear.out_features,
                               linear.bias is not None,
@@ -25,6 +25,9 @@ def fuse_linear_eltwise_eval(linear, attr):
     linear_relu.attr = attr
     linear_relu.scalars = []
     linear_relu.algorithm = ""
+    # TODO: define this behavior with a dict?
+    if attr == "leaky_relu":
+        linear_relu.scalars.append(eltwise.negative_slope)
     return linear_relu
 
 def fuse_post_op(gm, example_inputs):
@@ -36,12 +39,14 @@ def fuse_post_op(gm, example_inputs):
         (torch.nn.Linear, torch.nn.Sigmoid),
         (torch.nn.Linear, torch.nn.Tanh),
         (torch.nn.Linear, torch.nn.Hardswish),
+        (torch.nn.Linear, torch.nn.LeakyReLU),
     ]
     attr_names = [
         "relu",
         "sigmoid",
         "tanh",
         "hardswish",
+        "leaky_relu",
     ]
     assert len(patterns) == len(attr_names), "pattern and replacement length should be equal"
     for pattern, attr_name in zip(patterns, attr_names):
@@ -58,7 +63,7 @@ def fuse_post_op(gm, example_inputs):
                     tensors.append(linear.bias)
                 is_cpu = all(x.device == torch.device('cpu') for x in tensors)
                 if eval_mode and is_cpu:
-                    fused_linear = fuse_linear_eltwise_eval(linear, attr_name)
+                    fused_linear = fuse_linear_eltwise_eval(linear, eltwise, attr_name)
                     replace_node_module(node.args[0], modules, fused_linear)
                     node.replace_all_uses_with(node.args[0])
                     new_graph.erase_node(node)
