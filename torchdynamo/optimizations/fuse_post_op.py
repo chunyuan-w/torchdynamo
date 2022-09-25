@@ -11,7 +11,7 @@ class LinearReLU(torch.nn.Linear):
             device=device, dtype=dtype)
     
     def forward(self, input):
-        y = torch.ops.mkldnn_prepacked.linear_relu(input, self.weight, self.bias)
+        y = torch.ops.mkldnn_prepacked.linear_relu(input, self.weight, self.bias, "relu")
         return y
 
 def fuse_linear_relu_eval(linear):
