@@ -12,12 +12,12 @@ def _eltwise_list():
         [nn.Tanh(), 'aten::tanh'],
         [nn.Hardswish(), 'aten::hardswish'],
         [nn.LeakyReLU(0.1, inplace=False), 'aten::leaky_relu'],
+        [nn.Hardtanh(min_val=-0.5, max_val=4, inplace=False), 'aten::hardtanh'],
 
+        # TODO: support inplace
         # [torch.relu, 'aten::relu'], # TODO support method relu
         # [torch.sigmoid, 'aten::sigmoid'],
         # [torch.tanh, 'aten::tanh'],
-        # [nn.LeakyReLU(0.1, inplace=False), 'aten::leaky_relu'],
-        # [nn.Hardtanh(inplace=False), 'aten::hardtanh'],
         # [nn.GELU(approximate="none"), 'aten::gelu'],
         # [nn.GELU(approximate="tanh"), 'aten::gelu'],
     ]
