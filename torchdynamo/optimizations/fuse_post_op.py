@@ -1,11 +1,12 @@
 import copy
 
 import torch
+import torch.nn as nn
 import torch.fx as fx
 from torch.fx.experimental.optimization import matches_module_pattern, replace_node_module
 
 
-class LinearEltwise(torch.nn.Linear):
+class LinearEltwise(nn.Linear):
     def __init__(self, in_features, out_features, bias=True, device=None, dtype=None):
         super(LinearEltwise, self).__init__(in_features, out_features, bias=bias,
             device=device, dtype=dtype)
@@ -41,36 +42,29 @@ def fuse_linear_eltwise_eval(linear, eltwise, attr, extra_inputs):
     return linear_eltwise
 
 class EltwiseFusionOp:
-    def __init__(self, scalars=[], algorithm=""):
+    def __init__(self, post_op, scalars=[], algorithm=""):
+        self.post_op = post_op
         self.scalars = scalars
         self.algorithm = algorithm
 
-attr_names = {
-    "relu": EltwiseFusionOp(),
-    "sigmoid": EltwiseFusionOp(),
-    "tanh": EltwiseFusionOp(),
-    "hardswish": EltwiseFusionOp(),
-    "leaky_relu": EltwiseFusionOp(scalars=["negative_slope"]),
-    "hardtanh": EltwiseFusionOp(scalars=["min_val", "max_val"]),
-    "gelu": EltwiseFusionOp(algorithm="approximate"),
+computation_op = nn.Linear
+
+attr_map = {
+    "relu": EltwiseFusionOp(post_op=nn.ReLU()),
+    "sigmoid": EltwiseFusionOp(post_op=nn.Sigmoid()),
+    "tanh": EltwiseFusionOp(post_op=nn.Tanh),
+    "hardswish": EltwiseFusionOp(post_op=nn.Hardswish),
+    "leaky_relu": EltwiseFusionOp(post_op=nn.LeakyReLU, scalars=["negative_slope"]),
+    "hardtanh": EltwiseFusionOp(post_op=nn.Hardtanh, scalars=["min_val", "max_val"]),
+    "gelu": EltwiseFusionOp(post_op=nn.GELU, algorithm="approximate"),
 }
 
 def fuse_post_op(gm, example_inputs):
     modules = dict(gm.named_modules())
     new_graph = copy.deepcopy(gm.graph)
 
-    patterns = [
-        (torch.nn.Linear, torch.nn.ReLU),
-        (torch.nn.Linear, torch.nn.Sigmoid),
-        (torch.nn.Linear, torch.nn.Tanh),
-        (torch.nn.Linear, torch.nn.Hardswish),
-        (torch.nn.Linear, torch.nn.LeakyReLU),
-        (torch.nn.Linear, torch.nn.Hardtanh),
-        (torch.nn.Linear, torch.nn.GELU),
-    ]
-
-    assert len(patterns) == len(attr_names), "pattern and replacement length should be equal"
-    for pattern, attr_name in zip(patterns, attr_names):
+    for attr_name, value in attr_map.items():
+        pattern = (computation_op, value.post_op)
         for node in new_graph.nodes:
             if matches_module_pattern(pattern, node, modules):
                 if len(node.args[0].users) > 1:  # Output of linear is used by other nodes
@@ -84,7 +78,7 @@ def fuse_post_op(gm, example_inputs):
                     tensors.append(linear.bias)
                 is_cpu = all(x.device == torch.device('cpu') for x in tensors)
                 if eval_mode and is_cpu:
-                    fused_linear = fuse_linear_eltwise_eval(linear, eltwise, attr_name, attr_names[attr_name])
+                    fused_linear = fuse_linear_eltwise_eval(linear, eltwise, attr_name, value)
                     replace_node_module(node.args[0], modules, fused_linear)
                     node.replace_all_uses_with(node.args[0])
                     new_graph.erase_node(node)
