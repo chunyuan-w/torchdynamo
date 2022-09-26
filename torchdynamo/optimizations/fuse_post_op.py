@@ -18,11 +18,8 @@ class LinearEltwise(nn.Linear):
     def update_status(self, eltwise, attr, extra_inputs):
         self.attr = attr
 
-        scalars = []
-        for item in extra_inputs.scalars:
-            assert hasattr(eltwise, item)
-            scalars.append(getattr(eltwise, item))
-        self.scalars = scalars
+        assert all(hasattr(eltwise, item) for item in extra_inputs.scalars)
+        self.scalars = [getattr(eltwise, item) for item in extra_inputs.scalars]
 
         algorithm = ""
         if extra_inputs.algorithm:
@@ -50,8 +47,8 @@ class EltwiseFusionOp:
 computation_op = nn.Linear
 
 attr_map = {
-    "relu": EltwiseFusionOp(post_op=nn.ReLU()),
-    "sigmoid": EltwiseFusionOp(post_op=nn.Sigmoid()),
+    "relu": EltwiseFusionOp(post_op=nn.ReLU),
+    "sigmoid": EltwiseFusionOp(post_op=nn.Sigmoid),
     "tanh": EltwiseFusionOp(post_op=nn.Tanh),
     "hardswish": EltwiseFusionOp(post_op=nn.Hardswish),
     "leaky_relu": EltwiseFusionOp(post_op=nn.LeakyReLU, scalars=["negative_slope"]),
