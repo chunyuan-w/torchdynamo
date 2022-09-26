@@ -91,11 +91,12 @@ def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
                 linear = modules[node.args[0].target]
                 eltwise = modules[node.target]
                 eval_mode = all(not n.training for n in [linear, eltwise])
-                if eval_mode:
-                    fused_linear = fuse_linear_eltwise_eval(linear, eltwise, op_name, op_info)
-                    replace_node_module(node.args[0], modules, fused_linear)
-                    node.replace_all_uses_with(node.args[0])
-                    gm.graph.erase_node(node)
+                if not eval_mode:
+                    continue
+                fused_linear = fuse_linear_eltwise_eval(linear, eltwise, op_name, op_info)
+                replace_node_module(node.args[0], modules, fused_linear)
+                node.replace_all_uses_with(node.args[0])
+                gm.graph.erase_node(node)
     gm.recompile()   
     return gm    
 
