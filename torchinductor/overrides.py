@@ -50,31 +50,31 @@ class LinearEltwise(nn.Linear):
         super(LinearEltwise, self).__init__(in_features, out_features, bias=bias,
             device=device, dtype=dtype)
 
-    def update_status(self, linear, eltwise, attr, extra_inputs):
+    def update_status(self, linear, eltwise, op_name, op_info):
         self.__dict__ = copy.deepcopy(linear.__dict__)
 
-        self.attr = attr
+        self.attr = op_name
 
-        assert all(hasattr(eltwise, item) for item in extra_inputs.scalars)
-        self.scalars = [getattr(eltwise, item) for item in extra_inputs.scalars]
+        assert all(hasattr(eltwise, item) for item in op_info.scalars)
+        self.scalars = [getattr(eltwise, item) for item in op_info.scalars]
 
         algorithm = ""
-        if extra_inputs.algorithm:
-            assert hasattr(eltwise, extra_inputs.algorithm)
-            algorithm = getattr(eltwise, extra_inputs.algorithm) 
+        if op_info.algorithm:
+            assert hasattr(eltwise, op_info.algorithm)
+            algorithm = getattr(eltwise, op_info.algorithm) 
         self.algorithm = algorithm
 
     def forward(self, input):
         y = torch.ops.mkldnn_prepacked.linear_eltwise(input, self.weight, self.bias, self.attr, self.scalars, self.algorithm)
         return y
 
-def fuse_linear_eltwise_eval(linear, eltwise, attr, extra_inputs):
+def fuse_linear_eltwise_eval(linear, eltwise, op_name, op_info):
     linear_eltwise = LinearEltwise(linear.in_features,
                               linear.out_features,
                               linear.bias is not None,
                               linear.weight.device,
                               linear.weight.dtype)
-    linear_eltwise.update_status(linear, eltwise, attr, extra_inputs)
+    linear_eltwise.update_status(linear, eltwise, op_name, op_info)
     return linear_eltwise
 
 def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
