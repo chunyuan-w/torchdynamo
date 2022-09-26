@@ -6,7 +6,6 @@ import copy
 import torch
 import torch.nn as nn
 from torch import _prims
-import torch.fx as fx
 from torch.fx.experimental.proxy_tensor import ProxyTorchDispatchMode
 from torch.fx.experimental.optimization import matches_module_pattern, replace_node_module
 from torch.overrides import TorchFunctionMode
@@ -78,29 +77,26 @@ def fuse_linear_eltwise_eval(linear, eltwise, attr, extra_inputs):
     return linear_eltwise
 
 def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
+    is_cpu = all(example_input.device == torch.device('cpu') for example_input in example_inputs)
+    if not is_cpu:
+        return gm
     modules = dict(gm.named_modules())
-    new_graph = copy.deepcopy(gm.graph)
 
     for op_name, op_info in op_map.items():
         pattern = (computation_op, op_info.post_op)
-        for node in new_graph.nodes:
+        for node in gm.graph.nodes:
             if matches_module_pattern(pattern, node, modules):
                 if len(node.args[0].users) > 1:  # Output of linear is used by other nodes
                     continue
                 linear = modules[node.args[0].target]
                 eltwise = modules[node.target]
                 eval_mode = all(not n.training for n in [linear, eltwise])
-
-                tensors = example_inputs + [linear.weight]
-                if linear.bias is not None:
-                    tensors.append(linear.bias)
-                is_cpu = all(x.device == torch.device('cpu') for x in tensors)
-                if eval_mode and is_cpu:
+                if eval_mode:
                     fused_linear = fuse_linear_eltwise_eval(linear, eltwise, op_name, op_info)
                     replace_node_module(node.args[0], modules, fused_linear)
                     node.replace_all_uses_with(node.args[0])
-                    new_graph.erase_node(node)
-    gm =  fx.GraphModule(gm, new_graph)    
+                    gm.graph.erase_node(node)
+    gm.recompile()   
     return gm    
 
 def _philox_rand_like_meta(input, seed, offset):
@@ -233,11 +229,11 @@ replacements = {torch.nn.functional.dropout: lowmem_dropout, torch.rand_like: ra
 computation_op = nn.Linear
 
 op_map = {
-    "relu": EltwiseFusionOp(post_op=nn.ReLU),
-    "sigmoid": EltwiseFusionOp(post_op=nn.Sigmoid),
-    "tanh": EltwiseFusionOp(post_op=nn.Tanh),
-    "hardswish": EltwiseFusionOp(post_op=nn.Hardswish),
-    "leaky_relu": EltwiseFusionOp(post_op=nn.LeakyReLU, scalars=["negative_slope"]),
-    "hardtanh": EltwiseFusionOp(post_op=nn.Hardtanh, scalars=["min_val", "max_val"]),
-    "gelu": EltwiseFusionOp(post_op=nn.GELU, algorithm="approximate"),
+    "relu": EltwiseFusionOp(nn.ReLU),
+    "sigmoid": EltwiseFusionOp(nn.Sigmoid),
+    "tanh": EltwiseFusionOp(nn.Tanh),
+    "hardswish": EltwiseFusionOp(nn.Hardswish),
+    "leaky_relu": EltwiseFusionOp(nn.LeakyReLU, scalars=["negative_slope"]),
+    "hardtanh": EltwiseFusionOp(nn.Hardtanh, scalars=["min_val", "max_val"]),
+    "gelu": EltwiseFusionOp(nn.GELU, algorithm="approximate"),
 }
