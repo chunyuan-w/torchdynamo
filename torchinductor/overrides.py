@@ -50,7 +50,9 @@ class LinearEltwise(nn.Linear):
         super(LinearEltwise, self).__init__(in_features, out_features, bias=bias,
             device=device, dtype=dtype)
 
-    def update_status(self, eltwise, attr, extra_inputs):
+    def update_status(self, linear, eltwise, attr, extra_inputs):
+        self.__dict__ = copy.deepcopy(linear.__dict__)
+
         self.attr = attr
 
         assert all(hasattr(eltwise, item) for item in extra_inputs.scalars)
@@ -72,8 +74,7 @@ def fuse_linear_eltwise_eval(linear, eltwise, attr, extra_inputs):
                               linear.bias is not None,
                               linear.weight.device,
                               linear.weight.dtype)
-    linear_eltwise.__dict__ = copy.deepcopy(linear.__dict__)
-    linear_eltwise.update_status(eltwise, attr, extra_inputs)
+    linear_eltwise.update_status(linear, eltwise, attr, extra_inputs)
     return linear_eltwise
 
 def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
