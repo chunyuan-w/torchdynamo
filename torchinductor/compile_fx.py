@@ -12,7 +12,6 @@ from torch.utils._mode_utils import no_dispatch
 
 from torchdynamo.optimizations.backends import aot_autograd
 from torchdynamo.optimizations.normalize import normalize_ir
-from torchdynamo.optimizations.fuse_post_op import fuse_post_op
 from torchdynamo.utils import dynamo_timed
 from torchdynamo.utils import identity
 from torchdynamo.utils import preserve_rng_state
@@ -238,7 +237,7 @@ def compile_fx(model_: torch.fx.GraphModule, example_inputs_: List[torch.Tensor]
     with overrides.patch_functions():
         model_ = normalize_ir(model_, example_inputs_)
         model_ = overrides.replace_fx(model_)
-        model_ = fuse_post_op(model_, example_inputs_)
+        model_ = overrides.fuse_fx(model_, example_inputs_)
     num_example_inputs = len(example_inputs_)
     cudagraphs = BoxedBool(config.triton.cudagraphs)
 

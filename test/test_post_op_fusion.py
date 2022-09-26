@@ -5,7 +5,7 @@ from torch.testing._internal.common_quantization import NodeSpec as ns, Quantiza
 
 import torchdynamo        
 from torchdynamo.testing import same
-from torchdynamo.optimizations.fuse_post_op import fuse_post_op, LinearEltwise
+from torchinductor.overrides import fuse_fx, LinearEltwise
 
 torchdynamo.config.raise_on_backend_error = False
 
@@ -43,7 +43,7 @@ class TestFuseFx(QuantizationTestCase):
 
         v = torch.randn(input_shape)
 
-        fused_gm = fuse_post_op(torch.fx.symbolic_trace(mod), [v])
+        fused_gm = fuse_fx(torch.fx.symbolic_trace(mod), [v])
         expected_nodes = [
             ns.call_module(LinearEltwise)
         ]
