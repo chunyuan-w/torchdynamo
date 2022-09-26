@@ -46,11 +46,12 @@ class EltwiseFusionOp:
         self.algorithm = algorithm
 
 class LinearEltwise(nn.Linear):
-    def __init__(self, in_features, out_features, bias, device, dtype):
+    def __init__(self, linear, eltwise, op_name, op_info, in_features, out_features, bias, device, dtype):
         super(LinearEltwise, self).__init__(in_features, out_features, bias=bias,
             device=device, dtype=dtype)
+        self._update_module_params(linear, eltwise, op_name, op_info)
 
-    def update_status(self, linear, eltwise, op_name, op_info):
+    def _update_module_params(self, linear, eltwise, op_name, op_info):
         self.__dict__ = copy.deepcopy(linear.__dict__)
 
         self.attr = op_name
@@ -69,13 +70,15 @@ class LinearEltwise(nn.Linear):
         return y
 
 def fuse_linear_eltwise_eval(linear, eltwise, op_name, op_info):
-    linear_eltwise = LinearEltwise(linear.in_features,
-                              linear.out_features,
-                              linear.bias is not None,
-                              linear.weight.device,
-                              linear.weight.dtype)
-    linear_eltwise.update_status(linear, eltwise, op_name, op_info)
-    return linear_eltwise
+    return LinearEltwise(linear,
+                    eltwise,
+                    op_name,
+                    op_info,
+                    linear.in_features,
+                    linear.out_features,
+                    linear.bias is not None,
+                    linear.weight.device,
+                    linear.weight.dtype)
 
 def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
     is_cpu = all(example_input.device == torch.device('cpu') for example_input in example_inputs)
