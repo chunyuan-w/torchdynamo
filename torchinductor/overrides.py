@@ -104,21 +104,22 @@ def fuse_linear_eltwise_eval(linear, eltwise, op_name, op_info):
 
 def replace_functional(gm: torch.fx.GraphModule):
     for node in reversed(list(gm.graph.nodes)):
-        if (
-            node.op == "call_function" or node.op == "call_method"
-        ) and node.target in functional_to_module:
-            # TODO: handle args
-            if len(node.args) != 1:
-                continue
-            module_name = "%s_module" % node.name
-            module = functional_to_module.get(node.target)(**node.kwargs)
-            gm.add_submodule(module_name, module)
+        for func, mod in zip(functional_pattern, functional_replacement):
+            if (
+                node.op == "call_function" or node.op == "call_method"
+            ) and node.target in func:
+                # TODO: handle args
+                if len(node.args) != 1:
+                    continue
+                module_name = "%s_module" % node.name
+                module = mod(**node.kwargs)
+                gm.add_submodule(module_name, module)
 
-            with gm.graph.inserting_before(node):
-                new_node = gm.graph.call_module(module_name=module_name, args=node.args)
-                node.replace_all_uses_with(new_node)
-            gm.graph.erase_node(node)
-            dict(gm.named_modules())[module_name].training = gm.training
+                with gm.graph.inserting_before(node):
+                    new_node = gm.graph.call_module(module_name=module_name, args=node.args)
+                    node.replace_all_uses_with(new_node)
+                gm.graph.erase_node(node)
+                dict(gm.named_modules())[module_name].training = gm.training
     gm.recompile()
     return gm
 
@@ -298,7 +299,12 @@ pointwise_op_map = {
     "gelu": EltwiseFusionOp(nn.GELU, algorithm="approximate"),
 }
 
-functional_to_module = {
-    torch.relu: nn.ReLU,
-    torch.nn.functional.gelu: nn.GELU,
-}
+functional_pattern = [
+    [torch.relu, torch.nn.functional.relu, 'relu'],
+    [torch.nn.functional.gelu],
+]
+
+functional_replacement = [
+    nn.ReLU,
+    nn.GELU,
+]
