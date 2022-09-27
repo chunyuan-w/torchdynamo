@@ -106,15 +106,16 @@ def replace_functional(gm: torch.fx.GraphModule):
     for node in reversed(list(gm.graph.nodes)):
         if (
             node.op == "call_function" or node.op == "call_method"
-        ) and node.target == torch.relu:
-            gm.add_submodule("relu", nn.ReLU())
+        ) and node.target in functional_to_module:
+            module_name = "%s_module" % node.name
+            gm.add_submodule(module_name, functional_to_module.get(node.target))
 
             with gm.graph.inserting_before(node):
-                new_node = gm.graph.call_module(module_name="relu", args=node.args)
+                new_node = gm.graph.call_module(module_name=module_name, args=node.args)
                 node.replace_all_uses_with(new_node)
             gm.graph.erase_node(node)
             # TODO: how to correctly setting training status here
-            dict(gm.named_modules())["relu"].training = gm.training
+            dict(gm.named_modules())[module_name].training = gm.training
     gm.recompile()
     return gm
 
@@ -144,7 +145,7 @@ def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
                 eltwise = modules[node.target]
                 eval_mode = all(not n.training for n in [linear, eltwise])
                 if not eval_mode:
-                    continue                
+                    continue
                 fused_linear = fuse_func(
                     linear, eltwise, pointwise_name, pointwise_info
                 )
@@ -292,4 +293,9 @@ pointwise_op_map = {
     "leaky_relu": EltwiseFusionOp(nn.LeakyReLU, scalars=["negative_slope"]),
     "hardtanh": EltwiseFusionOp(nn.Hardtanh, scalars=["min_val", "max_val"]),
     "gelu": EltwiseFusionOp(nn.GELU, algorithm="approximate"),
+}
+
+functional_to_module = {
+    torch.relu: nn.ReLU(),
+    # torch.nn.functional.gelu: nn.GELU(),
 }
