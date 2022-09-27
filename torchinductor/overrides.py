@@ -111,7 +111,7 @@ def replace_functional(gm: torch.fx.GraphModule):
             if node.kwargs or len(node.args) > 1:
                 continue
             module_name = "%s_module" % node.name
-            gm.add_submodule(module_name, functional_to_module.get(node.target))
+            gm.add_submodule(module_name, functional_to_module.get(node.target)())
 
             with gm.graph.inserting_before(node):
                 new_node = gm.graph.call_module(module_name=module_name, args=node.args)
@@ -298,6 +298,6 @@ pointwise_op_map = {
 }
 
 functional_to_module = {
-    torch.relu: nn.ReLU(),
-    torch.nn.functional.gelu: nn.GELU(),
+    torch.relu: nn.ReLU,
+    torch.nn.functional.gelu: nn.GELU,
 }
