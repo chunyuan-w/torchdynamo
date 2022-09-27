@@ -114,7 +114,7 @@ def replace_functional(gm: torch.fx.GraphModule):
                 node.replace_all_uses_with(new_node)
             gm.graph.erase_node(node)
             # TODO: how to correctly setting training status here
-            dict(gm.named_modules())["relu"].training = False
+            dict(gm.named_modules())["relu"].training = gm.training
     gm.recompile()
     return gm
 
