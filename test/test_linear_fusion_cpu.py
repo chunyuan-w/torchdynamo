@@ -30,7 +30,12 @@ def _eltwise_list():
         nn.Hardswish(),
         F.hardswish,
         nn.LeakyReLU(0.1, inplace=False),
+        lambda x: F.leaky_relu(x, 0.2),
         nn.Hardtanh(min_val=-0.5, max_val=4, inplace=False),
+        lambda x: F.hardtanh(x, min_val=-2.0, max_val=5),
+        # F.gelu, # TODO: handle using default value
+        lambda x: F.gelu(x, approximate="none"),
+        lambda x: F.gelu(x, approximate="tanh"),
         nn.GELU(approximate="none"),
         nn.GELU(approximate="tanh"),
     ]
