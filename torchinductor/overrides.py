@@ -61,7 +61,8 @@ class LinearEltwise(nn.Linear):
         linear,
         eltwise,
         op_name,
-        op_info,
+        scalars,
+        algorithm,
         in_features,
         out_features,
         bias,
@@ -71,22 +72,14 @@ class LinearEltwise(nn.Linear):
         super(LinearEltwise, self).__init__(
             in_features, out_features, bias=bias, device=device, dtype=dtype
         )
-        self._update_module_params(linear, eltwise, op_name, op_info)
+        self._update_module_params(linear, eltwise, op_name, scalars, algorithm)
 
-    def _update_module_params(self, linear, eltwise, op_name, op_info):
+    def _update_module_params(self, linear, eltwise, op_name, scalars, algorithm):
         self.__dict__ = copy.deepcopy(linear.__dict__)
 
         self.attr = op_name
 
-        assert all(hasattr(eltwise, item) for item in op_info.scalars)
-        self.scalars = [getattr(eltwise, item) for item in op_info.scalars]
-
-        algorithm = ""
-        if op_info.algorithm:
-            if hasattr(eltwise, op_info.algorithm):
-                algorithm = getattr(eltwise, op_info.algorithm)
-            else:
-                algorithm = op_info.default
+        self.scalars = scalars
         self.algorithm = algorithm
 
     def forward(self, input):
@@ -96,12 +89,13 @@ class LinearEltwise(nn.Linear):
         return y
 
 
-def fuse_linear_eltwise_eval(linear, eltwise, op_name, op_info):
+def fuse_linear_eltwise_eval(linear, eltwise, op_name, scalar, algorithm):
     return LinearEltwise(
         linear,
         eltwise,
         op_name,
-        op_info,
+        scalar,
+        algorithm,
         linear.in_features,
         linear.out_features,
         linear.bias is not None,
@@ -135,6 +129,43 @@ def matches_module_or_call_pattern(
         else:
             return False
     return True
+
+
+# TODO: the below 2 funcs have duplicates
+def get_eltwise_scalar_inputs(
+    modules: Dict[str, Any], node: torch.fx.Node, pointwise_info
+):
+    if node.op == "call_module":
+        m = modules[node.target]
+        assert all(hasattr(m, item) for item in pointwise_info.scalars)
+        scalars = [getattr(m, item) for item in pointwise_info.scalars]
+    elif node.op in ["call_function", "call_method"]:
+        assert all(node.kwargs.__contains__(item) for item in pointwise_info.scalars)
+        scalars = [node.kwargs.get(item) for item in pointwise_info.scalars]
+    else:
+        assert False, "unsupported node op kind"
+    return scalars
+
+
+def get_eltwise_algorithm_input(
+    modules: Dict[str, Any], node: torch.fx.Node, pointwise_info
+):
+    algorithm = ""
+    if not pointwise_info.algorithm:
+        return algorithm
+
+    if node.op == "call_module":
+        m = modules[node.target]
+        assert hasattr(m, pointwise_info.algorithm)
+        algorithm = getattr(m, pointwise_info.algorithm)
+    elif node.op in ["call_function", "call_method"]:
+        if node.kwargs.__contains__(pointwise_info.algorithm):
+            algorithm = node.kwargs.get(pointwise_info.algorithm)
+        else:
+            algorithm = pointwise_info.default
+    else:
+        assert False, "unsupported node op kind"
+    return algorithm
 
 
 def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
@@ -172,8 +203,12 @@ def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
                     eval_mode = all(not n.training for n in module_list)
                     if not eval_mode:
                         continue
+                    scalars = get_eltwise_scalar_inputs(modules, node, pointwise_info)
+                    algorithm = get_eltwise_algorithm_input(
+                        modules, node, pointwise_info
+                    )
                     fused_linear = fuse_func(
-                        linear, eltwise, pointwise_name, pointwise_info
+                        linear, eltwise, pointwise_name, scalars, algorithm
                     )
                     replace_node_module(node.args[0], modules, fused_linear)
                     node.replace_all_uses_with(node.args[0])
