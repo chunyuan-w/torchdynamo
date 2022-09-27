@@ -24,8 +24,8 @@ def _eltwise_list():
         nn.GELU(approximate="none"),
         nn.GELU(approximate="tanh"),
         torch.nn.functional.gelu,
-        # With kwargs is not supported
-        # lambda x: torch.nn.functional.gelu(x, approximate="tanh"),
+        lambda x: torch.nn.functional.gelu(x, approximate="tanh"),
+        lambda x: torch.nn.functional.gelu(x, approximate="none"),
     ]
     return eltwise_list
 

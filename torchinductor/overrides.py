@@ -107,11 +107,12 @@ def replace_functional(gm: torch.fx.GraphModule):
         if (
             node.op == "call_function" or node.op == "call_method"
         ) and node.target in functional_to_module:
-            # TODO: handle args and kwargs
-            if node.kwargs or len(node.args) > 1:
+            # TODO: handle args
+            if len(node.args) != 1:
                 continue
             module_name = "%s_module" % node.name
-            gm.add_submodule(module_name, functional_to_module.get(node.target)())
+            module = functional_to_module.get(node.target)(**node.kwargs)
+            gm.add_submodule(module_name, module)
 
             with gm.graph.inserting_before(node):
                 new_node = gm.graph.call_module(module_name=module_name, args=node.args)
