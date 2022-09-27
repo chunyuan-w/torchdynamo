@@ -48,10 +48,11 @@ def replace_fx(gm: torch.fx.GraphModule):
 
 
 class EltwiseFusionOp:
-    def __init__(self, post_op_list, scalars=[], algorithm=""):
+    def __init__(self, post_op_list, scalars=[], algorithm="", default=""):
         self.post_op_list = post_op_list
         self.scalars = scalars
         self.algorithm = algorithm
+        self.default = default
 
 
 class LinearEltwise(nn.Linear):
@@ -82,8 +83,10 @@ class LinearEltwise(nn.Linear):
 
         algorithm = ""
         if op_info.algorithm:
-            assert hasattr(eltwise, op_info.algorithm)
-            algorithm = getattr(eltwise, op_info.algorithm)
+            if hasattr(eltwise, op_info.algorithm):
+                algorithm = getattr(eltwise, op_info.algorithm)
+            else:
+                algorithm = op_info.default
         self.algorithm = algorithm
 
     def forward(self, input):
@@ -124,6 +127,9 @@ def matches_module_or_call_pattern(
             if type(modules[current_node.target]) is not expected_type:
                 return False
         elif current_node.op == "call_function" or current_node.op == "call_method":
+            # TODO: handle args
+            if len(current_node.args) > 1:
+                return False
             if current_node.target != expected_type:
                 return False
         else:
@@ -314,5 +320,5 @@ pointwise_op_map = {
     ),  # no call_function or tensor method for hardswish
     "leaky_relu": EltwiseFusionOp([nn.LeakyReLU], scalars=["negative_slope"]),
     "hardtanh": EltwiseFusionOp([nn.Hardtanh], scalars=["min_val", "max_val"]),
-    "gelu": EltwiseFusionOp([nn.GELU], algorithm="approximate"),
+    "gelu": EltwiseFusionOp([nn.GELU, F.gelu], algorithm="approximate", default="none"),
 }
