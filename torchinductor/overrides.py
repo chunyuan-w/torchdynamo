@@ -48,7 +48,7 @@ def replace_fx(gm: torch.fx.GraphModule):
 
 
 class EltwiseFusionOp:
-    def __init__(self, post_op_list, scalars=[], algorithm=""):
+    def __init__(self, post_op_list, scalars={}, algorithm=""):
         self.post_op_list = post_op_list
         self.scalars = scalars
         self.algorithm = algorithm
@@ -131,11 +131,16 @@ def get_eltwise_scalar_inputs(
 ):
     if node.op == "call_module":
         m = modules[node.target]
-        assert all(hasattr(m, item) for item in pointwise_info.scalars)
-        scalars = [getattr(m, item) for item in pointwise_info.scalars]
+        assert all(hasattr(m, item) for item in pointwise_info.scalars.keys())
+        scalars = [getattr(m, item) for item in pointwise_info.scalars.keys()]
     elif node.op in ["call_function", "call_method"]:
-        assert all(node.kwargs.__contains__(item) for item in pointwise_info.scalars)
-        scalars = [node.kwargs.get(item) for item in pointwise_info.scalars]
+        scalars = []
+        for key, default in pointwise_info.scalars.items():
+            if node.kwargs.__contains__(key):
+                scalar = node.kwargs.get(key)
+            else:
+                scalar = default
+            scalars.append(scalar)
     else:
         assert False, "unsupported node op kind"
     return scalars
@@ -148,13 +153,19 @@ def get_eltwise_algorithm_input(
     if not pointwise_info.algorithm:
         return algorithm
 
+    assert len(pointwise_info.algorithm) == 1, "algorithm length is expected to be 1"
+    key = next(iter(pointwise_info.algorithm))
+    default_value = next(iter(pointwise_info.algorithm.values()))
+
     if node.op == "call_module":
         m = modules[node.target]
-        assert hasattr(m, pointwise_info.algorithm)
-        algorithm = getattr(m, pointwise_info.algorithm)
+        assert hasattr(m, key)
+        algorithm = getattr(m, key)
     elif node.op in ["call_function", "call_method"]:
-        assert node.kwargs.__contains__(pointwise_info.algorithm)
-        algorithm = node.kwargs.get(pointwise_info.algorithm)
+        if node.kwargs.__contains__(key):
+            algorithm = node.kwargs.get(key)
+        else:
+            algorithm = default_value
     else:
         assert False, "unsupported node op kind"
     return algorithm
@@ -346,10 +357,10 @@ pointwise_op_map = {
         [nn.Hardswish, F.hardswish]
     ),  # no call_function or tensor method for hardswish
     "leaky_relu": EltwiseFusionOp(
-        [nn.LeakyReLU, F.leaky_relu], scalars=["negative_slope"]
+        [nn.LeakyReLU, F.leaky_relu], scalars={"negative_slope": 0.01}
     ),
     "hardtanh": EltwiseFusionOp(
-        [nn.Hardtanh, F.hardtanh], scalars=["min_val", "max_val"]
+        [nn.Hardtanh, F.hardtanh], scalars={"min_val": -1.0, "max_val": 1.0}
     ),
-    "gelu": EltwiseFusionOp([nn.GELU, F.gelu], algorithm="approximate"),
+    "gelu": EltwiseFusionOp([nn.GELU, F.gelu], algorithm={"approximate": "none"}),
 }
