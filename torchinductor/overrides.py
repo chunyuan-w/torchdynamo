@@ -123,9 +123,8 @@ def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
     is_cpu = all(
         example_input.device == torch.device("cpu") for example_input in example_inputs
     )
-    if not is_cpu:
+    if not is_cpu or gm.training:
         return gm
-
     gm = replace_functional(gm)
 
     modules = dict(gm.named_modules())
@@ -143,9 +142,6 @@ def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
                     continue
                 linear = modules[node.args[0].target]
                 eltwise = modules[node.target]
-                eval_mode = all(not n.training for n in [linear, eltwise])
-                if not eval_mode:
-                    continue
                 fused_linear = fuse_func(
                     linear, eltwise, pointwise_name, pointwise_info
                 )
