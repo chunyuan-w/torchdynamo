@@ -107,6 +107,9 @@ def replace_functional(gm: torch.fx.GraphModule):
         if (
             node.op == "call_function" or node.op == "call_method"
         ) and node.target in functional_to_module:
+            # TODO: handle args and kwargs
+            if node.kwargs or len(node.args) > 1:
+                continue
             module_name = "%s_module" % node.name
             gm.add_submodule(module_name, functional_to_module.get(node.target))
 
@@ -114,7 +117,6 @@ def replace_functional(gm: torch.fx.GraphModule):
                 new_node = gm.graph.call_module(module_name=module_name, args=node.args)
                 node.replace_all_uses_with(new_node)
             gm.graph.erase_node(node)
-            # TODO: how to correctly setting training status here
             dict(gm.named_modules())[module_name].training = gm.training
     gm.recompile()
     return gm
@@ -297,5 +299,5 @@ pointwise_op_map = {
 
 functional_to_module = {
     torch.relu: nn.ReLU(),
-    # torch.nn.functional.gelu: nn.GELU(),
+    torch.nn.functional.gelu: nn.GELU(),
 }
