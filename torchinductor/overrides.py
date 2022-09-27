@@ -102,12 +102,32 @@ def fuse_linear_eltwise_eval(linear, eltwise, op_name, op_info):
     )
 
 
+def replace_functional(gm: torch.fx.GraphModule):
+    for node in reversed(list(gm.graph.nodes)):
+        if (
+            node.op == "call_function" or node.op == "call_method"
+        ) and node.target == torch.relu:
+            gm.add_submodule("relu", nn.ReLU())
+
+            with gm.graph.inserting_before(node):
+                new_node = gm.graph.call_module(module_name="relu", args=node.args)
+                node.replace_all_uses_with(new_node)
+            gm.graph.erase_node(node)
+            # TODO: how to correctly setting training status here
+            dict(gm.named_modules())["relu"].training = False
+    gm.recompile()
+    return gm
+
+
 def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
     is_cpu = all(
         example_input.device == torch.device("cpu") for example_input in example_inputs
     )
     if not is_cpu:
         return gm
+
+    gm = replace_functional(gm)
+
     modules = dict(gm.named_modules())
 
     for (pointwise_name, pointwise_info), (

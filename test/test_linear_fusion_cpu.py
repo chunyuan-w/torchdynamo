@@ -14,6 +14,7 @@ torchdynamo.config.raise_on_backend_error = False
 
 def _eltwise_list():
     eltwise_list = [
+        torch.relu,
         nn.ReLU(),
         nn.Sigmoid(),
         nn.Tanh(),
