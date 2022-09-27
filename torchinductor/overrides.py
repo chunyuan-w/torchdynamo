@@ -3,11 +3,16 @@ import itertools
 import logging
 import random
 import weakref
+from typing import Any
+from typing import Dict
+from typing import Iterable
+from typing import Tuple
+from typing import Type
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import _prims
-from torch.fx.experimental.optimization import matches_module_pattern
 from torch.fx.experimental.optimization import replace_node_module
 from torch.fx.experimental.proxy_tensor import ProxyTorchDispatchMode
 from torch.overrides import TorchFunctionMode
@@ -43,8 +48,8 @@ def replace_fx(gm: torch.fx.GraphModule):
 
 
 class EltwiseFusionOp:
-    def __init__(self, post_op, scalars=[], algorithm=""):
-        self.post_op = post_op
+    def __init__(self, post_op_list, scalars=[], algorithm=""):
+        self.post_op_list = post_op_list
         self.scalars = scalars
         self.algorithm = algorithm
 
@@ -102,6 +107,30 @@ def fuse_linear_eltwise_eval(linear, eltwise, op_name, op_info):
     )
 
 
+def matches_module_or_call_pattern(
+    pattern: Iterable[Type], node: torch.fx.Node, modules: Dict[str, Any]
+):
+    if len(node.args) == 0:
+        return False
+    nodes: Tuple[Any, torch.fx.Node] = (node.args[0], node)
+    for expected_type, current_node in zip(pattern, nodes):
+        if not isinstance(current_node, torch.fx.Node):
+            return False
+        if current_node.op == "call_module":
+            if not isinstance(current_node.target, str):
+                return False
+            if current_node.target not in modules:
+                return False
+            if type(modules[current_node.target]) is not expected_type:
+                return False
+        elif current_node.op == "call_function" or current_node.op == "call_method":
+            if current_node.target != expected_type:
+                return False
+        else:
+            return False
+    return True
+
+
 def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
     is_cpu = all(
         example_input.device == torch.device("cpu") for example_input in example_inputs
@@ -114,24 +143,35 @@ def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
         computation_name,
         fuse_func,
     ) in itertools.product(pointwise_op_map.items(), computation_op_map.items()):
-        pattern = (computation_name, pointwise_info.post_op)
-        for node in gm.graph.nodes:
-            if matches_module_pattern(pattern, node, modules):
-                if (
-                    len(node.args[0].users) > 1
-                ):  # Output of linear is used by other nodes
-                    continue
-                linear = modules[node.args[0].target]
-                eltwise = modules[node.target]
-                eval_mode = all(not n.training for n in [linear, eltwise])
-                if not eval_mode:
-                    continue
-                fused_linear = fuse_func(
-                    linear, eltwise, pointwise_name, pointwise_info
-                )
-                replace_node_module(node.args[0], modules, fused_linear)
-                node.replace_all_uses_with(node.args[0])
-                gm.graph.erase_node(node)
+        for post_op in pointwise_info.post_op_list:
+            pattern = (computation_name, post_op)
+            for node in gm.graph.nodes:
+                if matches_module_or_call_pattern(pattern, node, modules):
+                    if (
+                        len(node.args[0].users) > 1
+                    ):  # Output of linear is used by other nodes
+                        continue
+                    linear = modules[node.args[0].target]
+
+                    assert node.op in ["call_module", "call_function", "call_method"]
+                    eltwise = (
+                        modules[node.target]
+                        if node.op == "call_module"
+                        else node.target
+                    )
+
+                    module_list = (
+                        [linear, eltwise] if node.op == "call_module" else [linear]
+                    )
+                    eval_mode = all(not n.training for n in module_list)
+                    if not eval_mode:
+                        continue
+                    fused_linear = fuse_func(
+                        linear, eltwise, pointwise_name, pointwise_info
+                    )
+                    replace_node_module(node.args[0], modules, fused_linear)
+                    node.replace_all_uses_with(node.args[0])
+                    gm.graph.erase_node(node)
     gm.recompile()
     return gm
 
@@ -266,11 +306,13 @@ replacements = {torch.nn.functional.dropout: lowmem_dropout, torch.rand_like: ra
 computation_op_map = {nn.Linear: fuse_linear_eltwise_eval}
 
 pointwise_op_map = {
-    "relu": EltwiseFusionOp(nn.ReLU),
-    "sigmoid": EltwiseFusionOp(nn.Sigmoid),
-    "tanh": EltwiseFusionOp(nn.Tanh),
-    "hardswish": EltwiseFusionOp(nn.Hardswish),
-    "leaky_relu": EltwiseFusionOp(nn.LeakyReLU, scalars=["negative_slope"]),
-    "hardtanh": EltwiseFusionOp(nn.Hardtanh, scalars=["min_val", "max_val"]),
-    "gelu": EltwiseFusionOp(nn.GELU, algorithm="approximate"),
+    "relu": EltwiseFusionOp([nn.ReLU, torch.relu, F.relu, "relu"]),
+    "sigmoid": EltwiseFusionOp([nn.Sigmoid, torch.sigmoid, F.sigmoid, "sigmoid"]),
+    "tanh": EltwiseFusionOp([nn.Tanh, torch.tanh, F.tanh, "tanh"]),
+    "hardswish": EltwiseFusionOp(
+        [nn.Hardswish, F.hardswish]
+    ),  # no call_function or tensor method for hardswish
+    "leaky_relu": EltwiseFusionOp([nn.LeakyReLU], scalars=["negative_slope"]),
+    "hardtanh": EltwiseFusionOp([nn.Hardtanh], scalars=["min_val", "max_val"]),
+    "gelu": EltwiseFusionOp([nn.GELU], algorithm="approximate"),
 }

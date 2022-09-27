@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.testing._internal.common_quantization import NodeSpec as ns
 from torch.testing._internal.common_quantization import QuantizationTestCase
 from torch.testing._internal.common_utils import run_tests
@@ -15,9 +16,19 @@ torchdynamo.config.raise_on_backend_error = False
 def _eltwise_list():
     eltwise_list = [
         nn.ReLU(),
+        torch.relu,
+        F.relu,
+        lambda x: x.relu(),
         nn.Sigmoid(),
+        torch.sigmoid,
+        F.sigmoid,
+        lambda x: x.sigmoid(),
         nn.Tanh(),
+        torch.tanh,
+        F.tanh,
+        lambda x: x.tanh(),
         nn.Hardswish(),
+        F.hardswish,
         nn.LeakyReLU(0.1, inplace=False),
         nn.Hardtanh(min_val=-0.5, max_val=4, inplace=False),
         nn.GELU(approximate="none"),
