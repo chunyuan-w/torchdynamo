@@ -119,6 +119,8 @@ def replace_functional(gm: torch.fx.GraphModule):
                     new_node = gm.graph.call_module(module_name=module_name, args=node.args)
                     node.replace_all_uses_with(new_node)
                 gm.graph.erase_node(node)
+                # gm.training becomes True when running using dynamo but it is False
+                # when we explicitly call fuse_fx in the UT when checking graph fusion
                 dict(gm.named_modules())[module_name].training = gm.training
     gm.recompile()
     return gm
