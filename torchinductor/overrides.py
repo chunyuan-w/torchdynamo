@@ -150,7 +150,8 @@ def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
                 linear = modules[node.args[0].target]
                 eltwise = modules[node.target]
                 eval_mode = all(not n.training for n in [linear, eltwise])
-                if not eval_mode:
+                grad_enabled = torch.is_grad_enabled()
+                if not eval_mode and grad_enabled:
                     continue
                 fused_linear = fuse_func(
                     linear, eltwise, pointwise_name, pointwise_info

@@ -46,21 +46,21 @@ class TestFuseFx(QuantizationTestCase):
                 x = self.linear(x)
                 x = self.eltwise(x)
                 return x
+        with torch.no_grad():
+            mod = M(eltwise_fn, input_shape[-1], 10, bias).eval()
 
-        mod = M(eltwise_fn, input_shape[-1], 10, bias).eval()
+            @torchdynamo.optimize("inductor")
+            def fn(x):
+                return mod(x)
 
-        @torchdynamo.optimize("inductor")
-        def fn(x):
-            return mod(x)
+            v = torch.randn(input_shape)
 
-        v = torch.randn(input_shape)
+            fused_gm = fuse_fx(torch.fx.symbolic_trace(mod), [v])
+            expected_nodes = [ns.call_module(LinearEltwise)]
+            self.checkGraphModuleNodes(fused_gm, expected_node_list=expected_nodes)
 
-        fused_gm = fuse_fx(torch.fx.symbolic_trace(mod), [v])
-        expected_nodes = [ns.call_module(LinearEltwise)]
-        self.checkGraphModuleNodes(fused_gm, expected_node_list=expected_nodes)
-
-        result = fn(v)
-        assert same(result, mod(v))
+            result = fn(v)
+            assert same(result, mod(v))
 
     def test_linear_eltwise(self):
         for eltwise_fn in _eltwise_list():
