@@ -164,6 +164,13 @@ def check_node_is_binary(node):
 
 
 def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
+    gm = fuse_linear_pointwise(gm, example_inputs)
+    gm = fuse_linear_binary(gm)
+
+    return gm
+
+
+def fuse_linear_pointwise(gm: torch.fx.GraphModule, example_inputs):
     # TODO put current fuse_fx into fuse_linear_pointwise
     is_cpu = all(
         example_input.device == torch.device("cpu") for example_input in example_inputs
@@ -195,10 +202,6 @@ def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
                 node.replace_all_uses_with(node.args[0])
                 gm.graph.erase_node(node)
     gm.recompile()
-    
-    
-    gm = fuse_linear_binary(gm)
-    
     return gm
 
 def fuse_linear_binary(gm: torch.fx.GraphModule):
@@ -234,6 +237,7 @@ def fuse_linear_binary(gm: torch.fx.GraphModule):
             else:
                 continue
             gm.graph.erase_node(node)
+    
     gm.recompile()
     return gm
 
