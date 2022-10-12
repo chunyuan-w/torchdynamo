@@ -3,6 +3,7 @@ import contextlib
 import dataclasses
 import functools
 import importlib
+import itertools
 import random
 import sys
 import unittest
@@ -2146,6 +2147,49 @@ class CommonTemplate:
                 torch.tensor([0, 0, 2, 1], dtype=torch.int64),
             ),
         )
+
+    def test_linear_binary(self):
+        def _binary_list():
+            binary_list = [
+                torch.add,
+                torch.sub,
+            ]
+            return binary_list
+
+        class M(torch.nn.Module):
+            def __init__(self, eltwise_fn, in_channels, out_channels, bias, **kwargs):
+                super(M, self).__init__()
+                self.linear = torch.nn.Linear(
+                    in_channels, out_channels, bias=bias, **kwargs
+                )
+                self.eltwise = eltwise_fn
+
+            def forward(self, x, y):
+                x = self.linear(x)
+                x = self.eltwise(x, y)
+                # TODO: test linear on both left and right side
+                # x = self.eltwise(y, x)
+                return x
+
+
+        options = itertools.product(
+            _binary_list(), [[2, 3, 10], [2, 10]], [True, False]
+        )
+        # dtype = torch.bfloat16
+        dtype = torch.float
+        out_feature = 30
+        for binary_ops, input_shape, bias in options:
+            mod = M(binary_ops, input_shape[-1], out_feature, bias).eval()
+
+            # TODO: only fuse for linear when the dtype is bf16
+            mod = mod.to(dtype)
+            v = torch.randn(input_shape).to(dtype)
+            other = torch.randn(input_shape[:-1] + [out_feature]).to(dtype)
+
+            self.common(
+                mod,
+                (v, other),
+            )
 
     # https://github.com/pytorch/torchdynamo/issues/467
     @patch.object(torchdynamo.config, "fake_tensor_propagation", False)
