@@ -837,6 +837,11 @@ def linear_eltwise(x: TensorBox, w: TensorBox, b: TensorBox, attr, scalars, algo
     return TensorBox.create(ir.LinearEltwise.create(x, w, b, attr, scalars, algorithm))
 
 
+@register_lowering(torch.ops.mkldnn._linear_binary)
+def linear_binary(x: TensorBox, y: TensorBox, w: TensorBox, b: TensorBox, attr):
+    return TensorBox.create(ir.LinearBinary.create(x, y, w, b, attr))
+
+
 def fallback_handler(kernel):
     fallbacks.add(kernel)
 

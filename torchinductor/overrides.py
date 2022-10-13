@@ -1,6 +1,7 @@
 import copy
 import itertools
 import logging
+import operator
 import random
 import weakref
 
@@ -108,7 +109,74 @@ def fuse_linear_eltwise_eval(linear, eltwise, op_name, op_info):
     )
 
 
+class LinearBinary(nn.Linear):
+    def __init__(self, linear, in_features, out_features, bias, device, dtype, attr):
+        super(LinearBinary, self).__init__(
+            in_features, out_features, bias=bias, device=device, dtype=dtype
+        )
+        self._update_module_params(linear, attr)
+
+    def _update_module_params(self, linear, attr):
+        self.__dict__ = copy.deepcopy(linear.__dict__)
+
+        self.attr = attr
+
+    def forward(self, input, other):
+        y = torch.ops.mkldnn._linear_binary(
+            input, other, self.weight, self.bias, self.attr
+        )
+        return y
+
+
+def fuse_linear_binary_eval(linear, attr):
+    assert not (linear.training), "Fusion only for eval!"
+    linear_binary = LinearBinary(
+        linear,
+        linear.in_features,
+        linear.out_features,
+        linear.bias is not None,
+        linear.weight.device,
+        linear.weight.dtype,
+        attr,
+    )
+    return linear_binary
+
+
+def check_node_kind(current_node, modules, node_kind):
+    if not isinstance(current_node, torch.fx.Node):
+        return False
+    if current_node.op != "call_module":
+        return False
+    if not isinstance(current_node.target, str):
+        return False
+    if current_node.target not in modules:
+        return False
+    if type(modules[current_node.target]) is not node_kind:
+        return False
+    return True
+
+
+def check_node_is_binary(node):
+    if (
+        (node.op == "call_function" and node.target in [torch.add, torch.sub])
+        or (node.op == "call_function" and node.target in [operator.add, operator.sub])
+        or (
+            node.op == "call_method"
+            and node.target in [torch.Tensor.add, torch.Tensor.sub]
+        )
+    ):
+        return True
+    return False
+
+
 def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
+    gm = fuse_linear_pointwise(gm, example_inputs)
+    gm = fuse_linear_binary(gm)
+
+    return gm
+
+
+def fuse_linear_pointwise(gm: torch.fx.GraphModule, example_inputs):
     is_cpu = all(
         example_input.device == torch.device("cpu") for example_input in example_inputs
     )
@@ -141,6 +209,58 @@ def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
                 replace_node_module(node.args[0], modules, fused_linear)
                 node.replace_all_uses_with(node.args[0])
                 gm.graph.erase_node(node)
+    gm.recompile()
+    return gm
+
+
+def replace_and_fuse_for_binary(
+    node, fuse_func, attr, modules, index_node, index_pointwise
+):
+    linear = modules[node.args[index_node].target]
+    fused_linear = fuse_func(linear, attr)
+    replace_node_module(node.args[index_node], modules, fused_linear)
+    node.args[index_node].args = node.args[index_node].args + (
+        node.args[index_pointwise],
+    )
+    node.replace_all_uses_with(node.args[index_node])
+
+
+def fuse_linear_binary(gm: torch.fx.GraphModule):
+    modules = dict(gm.named_modules())
+    for node in gm.graph.nodes:
+        if check_node_is_binary(node) and (
+            len(node.kwargs) != 2 or node.kwargs["alpha"] == 1.0
+        ):
+            node_kind = torch.nn.Linear
+            fuse_func = fuse_linear_binary_eval
+
+            if not isinstance(node.args[0], torch.fx.Node) or not isinstance(
+                node.args[1], torch.fx.Node
+            ):
+                continue
+            tensor0_meta = node.args[0].meta.get("tensor_meta")
+            tensor1_meta = node.args[1].meta.get("tensor_meta")
+            if not tensor0_meta or not tensor1_meta:
+                continue
+            if (
+                tensor0_meta.shape != tensor1_meta.shape
+                or tensor0_meta.dtype != tensor1_meta.dtype
+            ):
+                continue
+            attr = binary_attr[node.target]
+            index_list = supported_index_list[attr]
+            for index_dict in index_list:
+                index_node = index_dict["index_computation"]
+                index_pointwise = index_dict["index_pointwise"]
+                if check_node_kind(node.args[index_node], modules, node_kind):
+                    if len(node.args[index_node].users) > 1:
+                        continue
+                    replace_and_fuse_for_binary(
+                        node, fuse_func, attr, modules, index_node, index_pointwise
+                    )
+                    gm.graph.erase_node(node)
+                    break
+
     gm.recompile()
     return gm
 
@@ -282,4 +402,23 @@ pointwise_op_map = {
     "leaky_relu": EltwiseFusionOp(nn.LeakyReLU, scalars=["negative_slope"]),
     "hardtanh": EltwiseFusionOp(nn.Hardtanh, scalars=["min_val", "max_val"]),
     "gelu": EltwiseFusionOp(nn.GELU, algorithm="approximate"),
+}
+
+binary_attr = {
+    torch.add: "add",
+    torch.Tensor.add: "add",
+    operator.add: "add",
+    torch.sub: "sub",
+    torch.Tensor.sub: "sub",
+    operator.sub: "sub",
+}
+
+# For add: we support linear + other and other + linear
+# For sub, we only support linear - sub
+supported_index_list = {
+    "add": [
+        {"index_computation": 0, "index_pointwise": 1},
+        {"index_computation": 1, "index_pointwise": 0},
+    ],
+    "sub": [{"index_computation": 0, "index_pointwise": 1}],
 }
