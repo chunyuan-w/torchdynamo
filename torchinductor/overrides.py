@@ -136,7 +136,7 @@ def fuse_linear_binary_eval(linear, attr):
     return linear_binary
 
 
-def check_node_is_linear(current_node, modules):
+def check_node_kind(current_node, modules, node_kind):
     if not isinstance(current_node, torch.fx.Node):
         return False
     if current_node.op != "call_module":
@@ -145,7 +145,7 @@ def check_node_is_linear(current_node, modules):
         return False
     if current_node.target not in modules:
         return False
-    if type(modules[current_node.target]) is not torch.nn.Linear:
+    if type(modules[current_node.target]) is not node_kind:
         return False
     return True
 
@@ -205,12 +205,26 @@ def fuse_linear_pointwise(gm: torch.fx.GraphModule, example_inputs):
     return gm
 
 
+def check_and_fuse(node, fuse_func, modules, index_node, index_pointwise):
+    linear = modules[node.args[index_node].target]
+    attr = binary_attr[node.target]
+    fused_linear = fuse_func(linear, attr)
+    replace_node_module(node.args[index_node], modules, fused_linear)
+    node.args[index_node].args = node.args[index_node].args + (
+        node.args[index_pointwise],
+    )
+    node.replace_all_uses_with(node.args[index_node])
+
+
 def fuse_linear_binary(gm: torch.fx.GraphModule):
     modules = dict(gm.named_modules())
     for node in gm.graph.nodes:
         if check_node_is_binary(node) and (
             len(node.kwargs) != 2 or node.kwargs["alpha"] == 1.0
         ):
+            node_kind = torch.nn.Linear
+            fuse_func = fuse_linear_binary_eval
+
             if not isinstance(node.args[0], torch.fx.Node) or not isinstance(
                 node.args[1], torch.fx.Node
             ):
@@ -224,24 +238,18 @@ def fuse_linear_binary(gm: torch.fx.GraphModule):
                 or tensor0_meta.dtype != tensor1_meta.dtype
             ):
                 continue
-            if check_node_is_linear(node.args[0], modules):
+            if check_node_kind(node.args[0], modules, node_kind):
                 if len(node.args[0].users) > 1:
                     continue
-                linear = modules[node.args[0].target]
-                attr = binary_attr[node.target]
-                fused_linear = fuse_linear_binary_eval(linear, attr)
-                replace_node_module(node.args[0], modules, fused_linear)
-                node.args[0].args = node.args[0].args + (node.args[1],)
-                node.replace_all_uses_with(node.args[0])
-            elif check_node_is_linear(node.args[1], modules):
+                check_and_fuse(
+                    node, fuse_func, modules, index_node=0, index_pointwise=1
+                )
+            elif check_node_kind(node.args[1], modules, node_kind):
                 if len(node.args[1].users) > 1:
                     continue
-                linear = modules[node.args[1].target]
-                attr = binary_attr[node.target]
-                fused_linear = fuse_linear_binary_eval(linear, attr)
-                replace_node_module(node.args[1], modules, fused_linear)
-                node.args[1].args = node.args[1].args + (node.args[0],)
-                node.replace_all_uses_with(node.args[1])
+                check_and_fuse(
+                    node, fuse_func, modules, index_node=1, index_pointwise=0
+                )
             else:
                 continue
             gm.graph.erase_node(node)
