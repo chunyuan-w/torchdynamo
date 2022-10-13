@@ -2151,8 +2151,10 @@ class CommonTemplate:
     def test_linear_binary(self):
         def _binary_list():
             binary_list = [
-                torch.add,
-                torch.sub,
+                lambda x, y: torch.add(x, y),
+                lambda x, y: torch.add(y, x),
+                lambda x, y: torch.sub(x, y),
+                lambda x, y: torch.sub(y, x),  # this case won't be fused
             ]
             return binary_list
 
@@ -2167,10 +2169,7 @@ class CommonTemplate:
             def forward(self, x, y):
                 x = self.linear(x)
                 x = self.eltwise(x, y)
-                # TODO: test linear on both left and right side
-                # x = self.eltwise(y, x)
                 return x
-
 
         options = itertools.product(
             _binary_list(), [[2, 3, 10], [2, 10]], [True, False]
