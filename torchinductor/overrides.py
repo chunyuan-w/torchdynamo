@@ -205,9 +205,8 @@ def fuse_linear_pointwise(gm: torch.fx.GraphModule, example_inputs):
     return gm
 
 
-def check_and_fuse(node, fuse_func, modules, index_node, index_pointwise):
+def fuse_for_binary(node, fuse_func, attr, modules, index_node, index_pointwise):
     linear = modules[node.args[index_node].target]
-    attr = binary_attr[node.target]
     fused_linear = fuse_func(linear, attr)
     replace_node_module(node.args[index_node], modules, fused_linear)
     node.args[index_node].args = node.args[index_node].args + (
@@ -238,21 +237,19 @@ def fuse_linear_binary(gm: torch.fx.GraphModule):
                 or tensor0_meta.dtype != tensor1_meta.dtype
             ):
                 continue
-            if check_node_kind(node.args[0], modules, node_kind):
-                if len(node.args[0].users) > 1:
-                    continue
-                check_and_fuse(
-                    node, fuse_func, modules, index_node=0, index_pointwise=1
-                )
-            elif check_node_kind(node.args[1], modules, node_kind):
-                if len(node.args[1].users) > 1:
-                    continue
-                check_and_fuse(
-                    node, fuse_func, modules, index_node=1, index_pointwise=0
-                )
-            else:
-                continue
-            gm.graph.erase_node(node)
+            attr = binary_attr[node.target]
+            index_list = supported_index_list[attr]
+            for index_dict in index_list:
+                index_node = index_dict["index_computation"]
+                index_pointwise = index_dict["index_pointwise"]
+                if check_node_kind(node.args[index_node], modules, node_kind):
+                    if len(node.args[index_node].users) > 1:
+                        continue
+                    fuse_for_binary(
+                        node, fuse_func, attr, modules, index_node, index_pointwise
+                    )
+                    gm.graph.erase_node(node)
+                    break
 
     gm.recompile()
     return gm
@@ -404,4 +401,14 @@ binary_attr = {
     torch.sub: "sub",
     torch.Tensor.sub: "sub",
     operator.sub: "sub",
+}
+
+# For add: we support linear + other and other + linear
+# For sub, we only support linear - sub
+supported_index_list = {
+    "add": [
+        {"index_computation": 0, "index_pointwise": 1},
+        {"index_computation": 1, "index_pointwise": 0},
+    ],
+    "sub": [{"index_computation": 0, "index_pointwise": 1}],
 }
