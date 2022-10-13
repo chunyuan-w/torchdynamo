@@ -205,7 +205,7 @@ def fuse_linear_pointwise(gm: torch.fx.GraphModule, example_inputs):
     return gm
 
 
-def fuse_for_binary(node, fuse_func, attr, modules, index_node, index_pointwise):
+def replace_and_fuse_for_binary(node, fuse_func, attr, modules, index_node, index_pointwise):
     linear = modules[node.args[index_node].target]
     fused_linear = fuse_func(linear, attr)
     replace_node_module(node.args[index_node], modules, fused_linear)
@@ -245,7 +245,7 @@ def fuse_linear_binary(gm: torch.fx.GraphModule):
                 if check_node_kind(node.args[index_node], modules, node_kind):
                     if len(node.args[index_node].users) > 1:
                         continue
-                    fuse_for_binary(
+                    replace_and_fuse_for_binary(
                         node, fuse_func, attr, modules, index_node, index_pointwise
                     )
                     gm.graph.erase_node(node)
