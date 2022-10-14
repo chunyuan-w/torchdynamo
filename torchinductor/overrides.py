@@ -240,6 +240,18 @@ def fuse_conv_binary_eval(conv, op_name):
     )
 
 
+def is_bfloat16_module(m):
+    weight_is_bf16 = m.weight.dtype == torch.bfloat16
+    bias_is_bf16 = m.bias is None or m.bias.dtype == torch.bfloat16
+    return weight_is_bf16 and bias_is_bf16
+
+
+def bf16_only_node(m):
+    if type(m) in [nn.Linear]:
+        return True
+    else:
+        return False
+
 def check_node_kind(current_node, modules, node_kind):
     if not isinstance(current_node, torch.fx.Node):
         return False
@@ -340,10 +352,9 @@ def fuse_unary(gm: torch.fx.GraphModule, example_inputs):
 
 
 def replace_and_fuse_for_binary(
-    node, fuse_func, attr, modules, index_node, index_pointwise
+    computation_node, node, fuse_func, attr, modules, index_node, index_pointwise
 ):
-    conv = modules[node.args[index_node].target]
-    fused_conv = fuse_func(conv, attr)
+    fused_conv = fuse_func(computation_node, attr)
     replace_node_module(node.args[index_node], modules, fused_conv)
     node.args[index_node].args = node.args[index_node].args + (
         node.args[index_pointwise],
@@ -380,8 +391,12 @@ def fuse_binary(gm: torch.fx.GraphModule):
                     if check_node_kind(node.args[index_node], modules, node_kind):
                         if len(node.args[index_node].users) > 1:
                             continue
+                        computation_node = modules[node.args[index_node].target]
+                        # only fuse for linear when the dtype is bf16
+                        if bf16_only_node(computation_node) and not is_bfloat16_module(computation_node):
+                            continue
                         replace_and_fuse_for_binary(
-                            node, fuse_func, attr, modules, index_node, index_pointwise
+                            computation_node, node, fuse_func, attr, modules, index_node, index_pointwise
                         )
                         # Make sure the fused node is post node of node's inputs nodes.
                         node.append(node.args[index_node])                        

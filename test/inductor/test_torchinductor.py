@@ -187,6 +187,7 @@ def check_model(
     ref_inputs = example_inputs
     ref_kwargs = kwargs
     has_lowp_args = False
+    original_lowp_dtype = torch.half
 
     if reference_in_float:
         # check_lowp is ignored here, it's kept just to be able to call `common` with extra arg
@@ -200,9 +201,15 @@ def check_model(
             else:
                 return x
 
+        def get_original_lowp_dtype(example_inputs):
+            dtypes = [x.dtype for x in example_inputs if isinstance(x, torch.Tensor)]
+            dtype_set = set(dtypes)
+            return dtype_set.pop() if len(dtype_set) == 1 else torch.half
+
         ref_inputs = list(map(upcast_fn, example_inputs))
         ref_kwargs = {k: upcast_fn(v) for k, v in kwargs.items()}
         if has_lowp_args:
+            original_lowp_dtype = get_original_lowp_dtype(example_inputs)
             if hasattr(model, "to"):
                 model = model.to(torch.float)
 
@@ -212,7 +219,7 @@ def check_model(
     # downcast the model back if needed
     if reference_in_float and has_lowp_args:
         if hasattr(model, "to"):
-            model = model.to(torch.half)
+            model = model.to(original_lowp_dtype)
 
     torchinductor.metrics.reset()
 
@@ -1263,13 +1270,12 @@ class CommonTemplate:
         options = itertools.product(
             _binary_list(), [[2, 3, 10], [2, 10]], [True, False]
         )
-        # dtype = torch.bfloat16
-        dtype = torch.float
+        dtype = torch.bfloat16
         out_feature = 30
         for binary_ops, input_shape, bias in options:
             mod = M(binary_ops, input_shape[-1], out_feature, bias).eval()
 
-            # TODO: only fuse for linear when the dtype is bf16
+            # only fuse for linear when the dtype is bf16
             mod = mod.to(dtype)
             v = torch.randn(input_shape).to(dtype)
             other = torch.randn(input_shape[:-1] + [out_feature]).to(dtype)
