@@ -333,6 +333,39 @@ def check_node_is_binary(node):
     return False
 
 
+class LinearBinary(nn.Linear):
+    def __init__(self, linear, in_features, out_features, bias, device, dtype, attr):
+        super(LinearBinary, self).__init__(
+            in_features, out_features, bias=bias, device=device, dtype=dtype
+        )
+        self._update_module_params(linear, attr)
+
+    def _update_module_params(self, linear, attr):
+        self.__dict__ = copy.deepcopy(linear.__dict__)
+
+        self.attr = attr
+
+    def forward(self, input, other):
+        y = torch.ops.mkldnn._linear_pointwise(
+            input, other, self.weight, self.bias, self.attr
+        )
+        return y
+
+
+def fuse_linear_binary_eval(linear, attr):
+    assert not (linear.training), "Fusion only for eval!"
+    linear_binary = LinearBinary(
+        linear,
+        linear.in_features,
+        linear.out_features,
+        linear.bias is not None,
+        linear.weight.device,
+        linear.weight.dtype,
+        attr,
+    )
+    return linear_binary
+
+
 def fuse_fx(gm: torch.fx.GraphModule, example_inputs):
     gm = fuse_unary(gm, example_inputs)
     gm = fuse_binary(gm)
@@ -421,6 +454,11 @@ def fuse_binary(gm: torch.fx.GraphModule):
                         if len(node.args[index_node].users) > 1:
                             continue
                         computation_node = modules[node.args[index_node].target]
+                        # only fuse for linear when the dtype is bf16
+                        if bf16_only_node(computation_node) and not is_bfloat16_module(
+                            computation_node
+                        ):
+                            continue
                         replace_and_fuse_for_binary(
                             computation_node,
                             node,
@@ -597,6 +635,7 @@ binary_attr = {
 
 computation_op_binary_op_fusion_map = {
     nn.Conv2d: fuse_conv_binary_eval,
+    nn.Linear: fuse_linear_binary_eval,
 }
 
 
