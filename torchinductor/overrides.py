@@ -308,10 +308,9 @@ def fuse_unary(gm: torch.fx.GraphModule, example_inputs):
 
 
 def replace_and_fuse_for_binary(
-    node, fuse_func, attr, modules, index_node, index_pointwise
+    computation_node, node, fuse_func, attr, modules, index_node, index_pointwise
 ):
-    conv = modules[node.args[index_node].target]
-    fused_conv = fuse_func(conv, attr)
+    fused_conv = fuse_func(computation_node, attr)
     replace_node_module(node.args[index_node], modules, fused_conv)
     node.args[index_node].args = node.args[index_node].args + (
         node.args[index_pointwise],
@@ -325,39 +324,44 @@ def fuse_binary(gm: torch.fx.GraphModule):
         if check_node_is_binary(node) and (
             len(node.kwargs) != 2 or node.kwargs["alpha"] == 1.0
         ):
-            node_kind = torch.nn.Conv2d
-            fuse_func = fuse_conv_binary_eval
-
-            if not isinstance(node.args[0], torch.fx.Node) or not isinstance(
-                node.args[1], torch.fx.Node
-            ):
-                continue
-            tensor0_meta = node.args[0].meta.get("tensor_meta")
-            tensor1_meta = node.args[1].meta.get("tensor_meta")
-            if not tensor0_meta or not tensor1_meta:
-                continue
-            if (
-                tensor0_meta.shape != tensor1_meta.shape
-                or tensor0_meta.stride != tensor1_meta.stride
-                or tensor0_meta.dtype != tensor1_meta.dtype
-            ):
-                continue
-            attr = binary_attr[node.target]
-            index_list = supported_index_list[attr]
-            for index_dict in index_list:
-                index_node = index_dict["index_computation"]
-                index_pointwise = index_dict["index_pointwise"]
-                if check_node_kind(node.args[index_node], modules, node_kind):
-                    if len(node.args[index_node].users) > 1:
-                        continue
-                    replace_and_fuse_for_binary(
-                        node, fuse_func, attr, modules, index_node, index_pointwise
-                    )
-                    # Make sure the fused node is post node of node's inputs nodes.
-                    node.append(node.args[index_node])
-                    gm.graph.erase_node(node)
-                    gm.graph.lint()
-                    break
+            for node_kind, fuse_func in computation_op_binary_op_fusion_map.items():
+                if not isinstance(node.args[0], torch.fx.Node) or not isinstance(
+                    node.args[1], torch.fx.Node
+                ):
+                    continue
+                tensor0_meta = node.args[0].meta.get("tensor_meta")
+                tensor1_meta = node.args[1].meta.get("tensor_meta")
+                if not tensor0_meta or not tensor1_meta:
+                    continue
+                if (
+                    tensor0_meta.shape != tensor1_meta.shape
+                    or tensor0_meta.stride != tensor1_meta.stride
+                    or tensor0_meta.dtype != tensor1_meta.dtype
+                ):
+                    continue
+                attr = binary_attr[node.target]
+                index_list = supported_index_list[attr]
+                for index_dict in index_list:
+                    index_node = index_dict["index_computation"]
+                    index_pointwise = index_dict["index_pointwise"]
+                    if check_node_kind(node.args[index_node], modules, node_kind):
+                        if len(node.args[index_node].users) > 1:
+                            continue
+                        computation_node = modules[node.args[index_node].target]
+                        replace_and_fuse_for_binary(
+                            computation_node,
+                            node,
+                            fuse_func,
+                            attr,
+                            modules,
+                            index_node,
+                            index_pointwise,
+                        )
+                        # Make sure the fused node is post node of node's inputs nodes.
+                        node.append(node.args[index_node])
+                        gm.graph.erase_node(node)
+                        gm.graph.lint()
+                        break
 
     gm.recompile()
     return gm
@@ -515,8 +519,13 @@ binary_attr = {
 }
 
 
+computation_op_binary_op_fusion_map = {
+    nn.Conv2d: fuse_conv_binary_eval,
+}
+
+
 # For add: we support conv + other and other + conv
-# For sub, we only support conv - sub
+# For sub, we only support conv - other but not other - sub
 supported_index_list = {
     "add": [
         {"index_computation": 0, "index_pointwise": 1},
