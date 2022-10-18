@@ -229,11 +229,10 @@ class WrapperCodeGen(CodeGen):
         self.prefix.splice(
             """
             from torch.utils.cpp_extension import load_inline
-            
-            async_compile.wait(globals())
-            del async_compile
 
-            def call(args):
+            wrapper = (
+            '''
+            at::Tensor call(at::Tensor arg0_1) {
             """
         )
         with self.prefix.indent():
@@ -353,13 +352,15 @@ class WrapperCodeGen(CodeGen):
                     line.codegen(result)
                 else:
                     result.writeline(line)
-
+            print("*" * 50, "result")
+            print(result)
             output_refs = [x.codegen_reference() for x in V.graph.graph_outputs]
             if output_refs:
-                result.writeline("return (" + ", ".join(output_refs) + ", )")
+                result.writeline("return (" + ", ".join(output_refs) + ", ) }''' )")
             else:
-                result.writeline("return ()")
-
+                result.writeline("return () }''' )")
+        result.writeline("module = load_inline(name='inline_extension', cpp_sources=[kernel0, wrapper], functions=['call'], extra_cflags=['-DCPU_CAPABILITY_AVX2 -march=native -O3 -ffast-math -fno-finite-math-only -fopenmp'])")
+        result.writeline("call = module.call")
         self.add_benchmark_harness(result)
 
         return result.getvalue()

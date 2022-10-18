@@ -599,7 +599,7 @@ class KernelGroup:
             code.splice(self.loops_code)
 
         codecache_def = IndentedBuffer()
-        codecache_def.writeline("async_compile.cpp('''")
+        codecache_def.writeline("('''")
         codecache_def.splice(code)
         codecache_def.writeline("''')")
 
