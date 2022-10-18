@@ -160,6 +160,8 @@ class CppCodeCache:
             lock = FileLock(os.path.join(lock_dir, key + ".lock"), timeout=LOCK_TIMEOUT)
             with lock:
                 output_path = input_path[:-3] + "so"
+                print("#" * 50, output_path)
+
                 if not os.path.exists(output_path):
                     cmd = cpp_compile_command(
                         input=input_path, output=output_path
