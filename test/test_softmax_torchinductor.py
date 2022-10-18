@@ -1,6 +1,7 @@
 import math
 import torch
 import torch.nn as nn
+import numpy as np
 
 # import torch._dynamo
 import torchdynamo
@@ -23,6 +24,14 @@ n_iter = 5
 
 for _ in range(n_iter):
 	test_softmax(a)
+
+
+dynamo_result = test_softmax(a)
+ref_result = torch.nn.functional.softmax(a)
+print(dynamo_result)
+print(ref_result)
+
+np.testing.assert_allclose(dynamo_result.numpy(), ref_result.numpy(), atol=1e-6)
 
 # class MHAScoresCalculation(nn.Module):
 # 	def __init__(self, dim_per_head, softmax_dim=-1):
