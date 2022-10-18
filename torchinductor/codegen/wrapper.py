@@ -292,7 +292,7 @@ class WrapperCodeGen(CodeGen):
 
         # can be freed but not reused
         if isinstance(buffer, ir.InputBuffer):
-            self.writeline(f"del {name}")
+            # self.writeline(f"del {name}")
             return
 
         if not self.can_reuse(buffer):
@@ -355,7 +355,7 @@ class WrapperCodeGen(CodeGen):
             print(result)
             output_refs = [x.codegen_reference() for x in V.graph.graph_outputs]
             if output_refs:
-                result.writeline("return (" + ", ".join(output_refs) + ", ) }''' )")
+                result.writeline("return " + ", ".join(output_refs) + "; }''' )")
             else:
                 result.writeline("return () }''' )")
         result.writeline("module = load_inline(name='inline_extension', cpp_sources=[kernel, wrapper], functions=['call'], extra_cflags=['-DCPU_CAPABILITY_AVX2 -march=native -O3 -ffast-math -fno-finite-math-only -fopenmp'])")
