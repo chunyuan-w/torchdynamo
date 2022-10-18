@@ -228,7 +228,8 @@ class WrapperCodeGen(CodeGen):
 
         self.prefix.splice(
             """
-
+            from torch.utils.cpp_extension import load_inline
+            
             async_compile.wait(globals())
             del async_compile
 
