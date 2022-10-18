@@ -460,12 +460,12 @@ class SizeVarAllocator(object):
 
         @functools.lru_cache(None)
         def sizeof(name):
-            code.writeline(f"{name}_size = {name}.size()")
+            code.writeline(f"auto {name}_size = {name}.sizes();")
             return f"{name}_size"
 
         @functools.lru_cache(None)
         def strideof(name):
-            code.writeline(f"{name}_stride = {name}.stride()")
+            code.writeline(f"auto {name}_stride = {name}.strides();")
             return f"{name}_stride"
 
         # TODO: This should be the below, but causes test/test_torchinductor.py::GpuTests::test_triton_conv_cuda to fail
@@ -480,7 +480,7 @@ class SizeVarAllocator(object):
                 shape = str(shape)
                 if shape in needed:
                     needed.remove(shape)
-                    code.writeline(f"{shape} = {sizeof(name)}[{dim}]")
+                    code.writeline(f"auto {shape} = {sizeof(name)}[{dim}];")
 
         for name, value in graph_inputs.items():
             shapes = value.get_stride()
@@ -488,7 +488,7 @@ class SizeVarAllocator(object):
                 shape = str(shape)
                 if shape in needed:
                     needed.remove(shape)
-                    code.writeline(f"{shape} = {strideof(name)}[{dim}]")
+                    code.writeline(f"auto {shape} = {strideof(name)}[{dim}];")
 
         assert not needed
 
@@ -500,10 +500,10 @@ class SizeVarAllocator(object):
     def codegen_shape_tuple(self, shape: Tuple[Expr, ...]) -> str:
         parts = list(map(self.codegen_sizevar, shape))
         if len(parts) == 0:
-            return "()"
+            return "{}"
         if len(parts) == 1:
-            return f"({parts[0]}, )"
-        return f"({', '.join(parts)})"
+            return f"{{{parts[0]}, }}"
+        return f"{{{', '.join(parts)}}}"
 
 
 def join_dimensions(expr: Expr) -> Expr:

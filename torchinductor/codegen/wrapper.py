@@ -55,10 +55,9 @@ def make_buffer_allocation(buffer):
     shape = tuple(buffer.get_size())
     stride = tuple(buffer.get_stride())
     return (
-        f"{buffer.get_name()} = empty_strided("
+        f"auto {buffer.get_name()} = at::empty_strided("
         f"{V.graph.sizevars.codegen_shape_tuple(shape)}, "
-        f"{V.graph.sizevars.codegen_shape_tuple(stride)}, "
-        f"device='{device.type}', dtype={dtype})"
+        f"{V.graph.sizevars.codegen_shape_tuple(stride)}); "
     )
 
 
@@ -239,8 +238,8 @@ class WrapperCodeGen(CodeGen):
             inp_len = len(V.graph.graph_inputs.keys())
             if inp_len != 0:
                 lhs = f"{', '.join(V.graph.graph_inputs.keys())}{'' if inp_len != 1 else ','}"
-                self.prefix.writeline(f"{lhs} = args")
-                self.prefix.writeline("args.clear()")
+                # self.prefix.writeline(f"{lhs} = args;")
+                # self.prefix.writeline("args.clear()")
             for name in V.graph.randomness_seeds:
                 self.prefix.writeline(
                     f"torch.randint(2**31, size=(), dtype=torch.int64, out={name})"
@@ -359,7 +358,7 @@ class WrapperCodeGen(CodeGen):
                 result.writeline("return (" + ", ".join(output_refs) + ", ) }''' )")
             else:
                 result.writeline("return () }''' )")
-        result.writeline("module = load_inline(name='inline_extension', cpp_sources=[kernel0, wrapper], functions=['call'], extra_cflags=['-DCPU_CAPABILITY_AVX2 -march=native -O3 -ffast-math -fno-finite-math-only -fopenmp'])")
+        result.writeline("module = load_inline(name='inline_extension', cpp_sources=[kernel, wrapper], functions=['call'], extra_cflags=['-DCPU_CAPABILITY_AVX2 -march=native -O3 -ffast-math -fno-finite-math-only -fopenmp'])")
         result.writeline("call = module.call")
         self.add_benchmark_harness(result)
 

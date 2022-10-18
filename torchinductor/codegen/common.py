@@ -341,22 +341,22 @@ class KernelArgs:
             dtype = buffer_types[outer]
             arg_defs.append(f"{DTYPE_TO_CPP[dtype]}* __restrict__ {inner}")
             name = inplaced.other_names[-1]
-            call_args.append(f"c_void_p({name}.data_ptr())")
+            call_args.append(f"(float*)({name}.data_ptr())")
         for outer, inner in self.input_buffers.items():
             if outer in self.inplace_buffers:
                 continue
             dtype = buffer_types[outer]
             arg_defs.append(f"const {DTYPE_TO_CPP[dtype]}* __restrict__ {inner}")
-            call_args.append(f"c_void_p({outer}.data_ptr())")
+            call_args.append(f"(float*)({outer}.data_ptr())")
         for outer, inner in self.output_buffers.items():
             if outer in self.inplace_buffers or inner == "REMOVED":
                 continue
             dtype = buffer_types[outer]
             arg_defs.append(f"{DTYPE_TO_CPP[dtype]}* __restrict__ {inner}")
-            call_args.append(f"c_void_p({outer}.data_ptr())")
+            call_args.append(f"(float*)({outer}.data_ptr())")
         for outer, inner in self.sizevars.items():
             arg_defs.append(f"const {INDEX_TYPE} {inner}")
-            call_args.append(f"c_long({outer})")
+            call_args.append(f"{outer}")
         return arg_defs, call_args
 
     def python_argdefs(self):
