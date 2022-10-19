@@ -80,6 +80,7 @@ from torch.utils.cpp_extension import load_inline
 
 wrapper = (
 '''
+#include "/home/chunyuan/torch-inductor/torchdynamo/kernel_func.h"
 at::Tensor call(at::Tensor arg0_1) {
     auto arg0_1_size = arg0_1.sizes();
     auto s0 = arg0_1_size[0];
@@ -91,10 +92,10 @@ at::Tensor call(at::Tensor arg0_1) {
     kernel((float*)(arg0_1.data_ptr()), (float*)(buf0.data_ptr()), (float*)(buf1.data_ptr()), (float*)(buf2.data_ptr()), (float*)(buf3.data_ptr()), s0, s1);
     return buf3; }''' )
 module = load_inline(name='inline_extension',
-    cpp_sources=[kernel0, wrapper],
+    cpp_sources=[wrapper],
     functions=['call'],
     extra_cflags=['-DCPU_CAPABILITY_AVX2 -march=native -O3 -ffast-math -fno-finite-math-only -fopenmp'],
-    # extra_ldflags=['/home/chunyuan/torch-inductor/torchdynamo/cbmynxnp4cqh66xm32doux5pu4uf2eav2ersh5kuapkudpyo2dpd.so']
+    extra_ldflags=['/home/chunyuan/torch-inductor/torchdynamo/cbmynxnp4cqh66xm32doux5pu4uf2eav2ersh5kuapkudpyo2dpd.so']
 )
 call = module.call
 
