@@ -610,6 +610,7 @@ class KernelGroup:
         # not use BracesBuffer, so we have no good indicator of a C++ buffer atm.
         codecache_str = codecache_str.replace("#pragma CMT", "//")
         wrapper.define_kernel(kernel_name, codecache_str)
+        wrapper.add_kernel_name(kernel_name)
 
         # generate the code to call this
         wrapper.writeline(

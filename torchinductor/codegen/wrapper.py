@@ -178,6 +178,7 @@ class WrapperCodeGen(CodeGen):
         self.header = IndentedBuffer()
         self.prefix = IndentedBuffer()
         self.kernels = {}
+        self._kernel_name_list = []
         self.lines = []
         self.header.splice(
             f"""
@@ -264,6 +265,12 @@ class WrapperCodeGen(CodeGen):
 
     def next_kernel_name(self):
         return f"kernel{next(self._names_iter)}"
+
+    def add_kernel_name(self, kernel_name):
+        self._kernel_name_list.append(kernel_name)
+
+    def get_kernel_name_list(self):
+        return self._kernel_name_list
 
     def codegen_allocation(self, buffer):
         name = buffer.get_name()
@@ -358,8 +365,10 @@ class WrapperCodeGen(CodeGen):
                 result.writeline("return " + ", ".join(output_refs) + "; }''' )")
             else:
                 result.writeline("return () }''' )")
-        # TODO: for the cpp_sources below, auto-generate [kernel0, kernel1, ... , wrapper] list
-        result.writeline("module = load_inline(name='inline_extension', cpp_sources=[kernel0, wrapper], functions=['call'], extra_cflags=['-DCPU_CAPABILITY_AVX2 -march=native -O3 -ffast-math -fno-finite-math-only -fopenmp'])")
+        cpp_sources = self.get_kernel_name_list()
+        cpp_sources.append("wrapper")
+        cpp_sources_str = ','.join(cpp_sources)
+        result.writeline(f"module = load_inline(name='inline_extension', cpp_sources=[{cpp_sources_str}], functions=['call'], extra_cflags=['-DCPU_CAPABILITY_AVX2 -march=native -O3 -ffast-math -fno-finite-math-only -fopenmp'])")
         result.writeline("call = module.call")
         self.add_benchmark_harness(result)
 
