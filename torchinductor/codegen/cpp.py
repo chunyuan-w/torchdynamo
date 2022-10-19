@@ -592,7 +592,8 @@ class KernelGroup:
         arg_defs, call_args = self.args.cpp_argdefs()
         arg_defs = ",\n".ljust(25).join(arg_defs)
         code = BracesBuffer()
-        code.writelines([cpp_prefix(), "" f'extern "C" void kernel({arg_defs})'])
+        kernel_name = wrapper.next_kernel_name()
+        code.writelines([cpp_prefix(), "" f'extern "C" void {kernel_name}({arg_defs})'])
         with code.indent():
             for old, new in self.args.aliases():
                 code.writeline(f"auto {old} = {new};")
@@ -604,7 +605,6 @@ class KernelGroup:
         codecache_def.writeline("''')")
 
         # kernel_name = wrapper.next_kernel_name()
-        kernel_name = "kernel"
         codecache_str = codecache_def.getvalue()
         # TODO(voz): Ostensibly, we should not need this. But there are cases where C++ codegen does
         # not use BracesBuffer, so we have no good indicator of a C++ buffer atm.

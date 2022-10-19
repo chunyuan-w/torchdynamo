@@ -358,7 +358,8 @@ class WrapperCodeGen(CodeGen):
                 result.writeline("return " + ", ".join(output_refs) + "; }''' )")
             else:
                 result.writeline("return () }''' )")
-        result.writeline("module = load_inline(name='inline_extension', cpp_sources=[kernel, wrapper], functions=['call'], extra_cflags=['-DCPU_CAPABILITY_AVX2 -march=native -O3 -ffast-math -fno-finite-math-only -fopenmp'])")
+        # TODO: for the cpp_sources below, auto-generate [kernel0, kernel1, ... , wrapper] list
+        result.writeline("module = load_inline(name='inline_extension', cpp_sources=[kernel0, wrapper], functions=['call'], extra_cflags=['-DCPU_CAPABILITY_AVX2 -march=native -O3 -ffast-math -fno-finite-math-only -fopenmp'])")
         result.writeline("call = module.call")
         self.add_benchmark_harness(result)
 
