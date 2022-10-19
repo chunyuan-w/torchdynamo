@@ -97,5 +97,5 @@ call = module.call
 if __name__ == "__main__":
     from torchdynamo.testing import rand_strided
     from torchinductor.utils import print_performance
-    arg0_1 = rand_strided({2, 512}, {512, 1}, device='cpu', dtype=torch.float32)
-    print_performance(lambda: call([arg0_1]))
+    arg0_1 = rand_strided((2, 512), (512, 1), device='cpu', dtype=torch.float32)
+    print_performance(lambda: call(arg0_1))
