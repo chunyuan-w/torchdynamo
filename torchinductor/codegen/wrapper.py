@@ -226,6 +226,7 @@ class WrapperCodeGen(CodeGen):
                     f"from {config.inductor_import}.triton_ops.batched_matmul import bmm_out as triton_bmm_out"
                 )
 
+        # TODO: handle arbitary input args instead of arg0_1 here
         self.prefix.splice(
             """
             from torch.utils.cpp_extension import load_inline
@@ -238,6 +239,7 @@ class WrapperCodeGen(CodeGen):
         with self.prefix.indent():
             inp_len = len(V.graph.graph_inputs.keys())
             if inp_len != 0:
+                # TODO: handle arbitary input args unpack here
                 lhs = f"{', '.join(V.graph.graph_inputs.keys())}{'' if inp_len != 1 else ','}"
                 # self.prefix.writeline(f"{lhs} = args;")
                 # self.prefix.writeline("args.clear()")
