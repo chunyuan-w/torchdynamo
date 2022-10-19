@@ -11,7 +11,7 @@ async_compile = AsyncCompile()
 
 kernel0 = ('''
 #include "/tmp/torchinductor_chunyuan/i5/ci5zbqbzeij2usetynv7oczewshegubkvtpswwuumpp6xjync55y.h"
-extern "C" void kernel0(const float* __restrict__ in_ptr0,
+extern "C" void kernel(const float* __restrict__ in_ptr0,
                        float* __restrict__ out_ptr0,
                        float* __restrict__ out_ptr1,
                        float* __restrict__ out_ptr2,
@@ -88,9 +88,14 @@ at::Tensor call(at::Tensor arg0_1) {
     auto buf1 = at::empty_strided({s0, s1}, {s1, 1}); 
     auto buf2 = at::empty_strided({s0, 1}, {1, s0}); 
     auto buf3 = at::empty_strided({s0, s1}, {s1, 1}); 
-    kernel0((float*)(arg0_1.data_ptr()), (float*)(buf0.data_ptr()), (float*)(buf1.data_ptr()), (float*)(buf2.data_ptr()), (float*)(buf3.data_ptr()), s0, s1);
+    kernel((float*)(arg0_1.data_ptr()), (float*)(buf0.data_ptr()), (float*)(buf1.data_ptr()), (float*)(buf2.data_ptr()), (float*)(buf3.data_ptr()), s0, s1);
     return buf3; }''' )
-module = load_inline(name='inline_extension', cpp_sources=[kernel0, wrapper], functions=['call'], extra_cflags=['-DCPU_CAPABILITY_AVX2 -march=native -O3 -ffast-math -fno-finite-math-only -fopenmp'])
+module = load_inline(name='inline_extension',
+    cpp_sources=[kernel0, wrapper],
+    functions=['call'],
+    extra_cflags=['-DCPU_CAPABILITY_AVX2 -march=native -O3 -ffast-math -fno-finite-math-only -fopenmp'],
+    # extra_ldflags=['/home/chunyuan/torch-inductor/torchdynamo/cbmynxnp4cqh66xm32doux5pu4uf2eav2ersh5kuapkudpyo2dpd.so']
+)
 call = module.call
 
 
