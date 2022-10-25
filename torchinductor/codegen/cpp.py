@@ -612,6 +612,10 @@ class KernelGroup:
         wrapper.define_kernel(kernel_name, codecache_str)
         wrapper.add_kernel_name(kernel_name)
 
+        kernel_path = "/home/chunyuan/torch-inductor/torchdynamo/cbmynxnp4cqh66xm32doux5pu4uf2eav2ersh5kuapkudpyo2dpd.so"
+        dlopen_str = f"auto kernel1_lib = dlopen(\"{kernel_path}\", RTLD_NOW);"
+        wrapper.writeline(dlopen_str)
+        
         # generate the code to call this
         wrapper.writeline(
             "{}({});".format(kernel_name, ", ".join(call_args)),
