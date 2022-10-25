@@ -600,7 +600,7 @@ class KernelGroup:
             code.splice(self.loops_code)
 
         codecache_def = IndentedBuffer()
-        codecache_def.writeline("('''")
+        codecache_def.writeline("async_compile.cpp('''")
         codecache_def.splice(code)
         codecache_def.writeline("''')")
 
@@ -611,7 +611,21 @@ class KernelGroup:
         codecache_str = codecache_str.replace("#pragma CMT", "//")
         wrapper.define_kernel(kernel_name, codecache_str)
 
-        kernel_path = "/home/chunyuan/torch-inductor/torchdynamo/cbmynxnp4cqh66xm32doux5pu4uf2eav2ersh5kuapkudpyo2dpd.so"
+        # kernel_path = "/home/chunyuan/torch-inductor/torchdynamo/cbmynxnp4cqh66xm32doux5pu4uf2eav2ersh5kuapkudpyo2dpd.so"
+        # kernel_path = "/tmp/torchinductor_chunyuan/bm/cbmynxnp4cqh66xm32doux5pu4uf2eav2ersh5kuapkudpyo2dpd.so"
+        # TODO: this duplicates with CodeCache logic
+        from ..codecache import code_hash, cache_dir, cpp_compile_command
+        import os
+        ext = "so"
+        extra = cpp_compile_command("i", "o")
+        # TODO: \n is required to match with the CodeCache behavior
+        source_code = '\n' + code.getvalue()
+        basename = code_hash(source_code + extra)
+        subdir = os.path.join(cache_dir(), basename[1:3])
+        # TODO: use a func to load it during runtime
+        kernel_path = os.path.join(subdir, f"{basename}.{ext}")
+        print(kernel_path)
+
         dlopen_str = f"auto {kernel_name}_lib = dlopen(\"{kernel_path}\", RTLD_NOW);"
         wrapper.writeline(dlopen_str)
         
