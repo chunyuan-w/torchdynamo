@@ -236,7 +236,6 @@ class WrapperCodeGen(CodeGen):
             #include <dlfcn.h>
             #include <assert.h>            
             at::Tensor call(at::Tensor arg0_1) {
-                typedef void (*Kernel)(const float*, float*, float*, float*, float*, const long, const long);
             """
         )
         with self.prefix.indent():

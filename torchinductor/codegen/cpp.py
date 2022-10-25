@@ -617,7 +617,10 @@ class KernelGroup:
         assert_str = f"assert({kernel_name}_lib != nullptr);"
         wrapper.writeline(assert_str)
 
-        kernel_load_str = f"void (*{kernel_name})(const float*, float*, float*, float*, float*, const long, const long) = (Kernel)dlsym({kernel_name}_lib, \"kernel\");"
+        kernel_type_str = f"void (*{kernel_name})(const float*, float*, float*, float*, float*, const long, const long);"
+        wrapper.writeline(kernel_type_str)
+
+        kernel_load_str = f"*(void **) (&{kernel_name}) = dlsym({kernel_name}_lib, \"kernel\");"
         wrapper.writeline(kernel_load_str)
 
         # generate the code to call this
