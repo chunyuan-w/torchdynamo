@@ -80,8 +80,11 @@ from torch.utils.cpp_extension import load_inline
 
 wrapper = (
 '''
-#include "/home/chunyuan/torch-inductor/torchdynamo/kernel_func.h"
+#include <dlfcn.h>
+#include <assert.h>
 at::Tensor call(at::Tensor arg0_1) {
+    typedef void (*Kernel)(const float*, float*, float*, float*, float*, const long, const long);
+
     auto arg0_1_size = arg0_1.sizes();
     auto s0 = arg0_1_size[0];
     auto s1 = arg0_1_size[1];
@@ -89,13 +92,15 @@ at::Tensor call(at::Tensor arg0_1) {
     auto buf1 = at::empty_strided({s0, s1}, {s1, 1}); 
     auto buf2 = at::empty_strided({s0, 1}, {1, s0}); 
     auto buf3 = at::empty_strided({s0, s1}, {s1, 1}); 
-    kernel((float*)(arg0_1.data_ptr()), (float*)(buf0.data_ptr()), (float*)(buf1.data_ptr()), (float*)(buf2.data_ptr()), (float*)(buf3.data_ptr()), s0, s1);
+    auto kernel1_lib = dlopen("/home/chunyuan/torch-inductor/torchdynamo/cbmynxnp4cqh66xm32doux5pu4uf2eav2ersh5kuapkudpyo2dpd.so", RTLD_NOW);
+    assert(kernel1_lib != nullptr);
+    void (*kernel1)(const float*, float*, float*, float*, float*, const long, const long) = (Kernel)dlsym(kernel1_lib, "kernel");
+    kernel1((float*)(arg0_1.data_ptr()), (float*)(buf0.data_ptr()), (float*)(buf1.data_ptr()), (float*)(buf2.data_ptr()), (float*)(buf3.data_ptr()), s0, s1);
     return buf3; }''' )
 module = load_inline(name='inline_extension',
     cpp_sources=[wrapper],
     functions=['call'],
     extra_cflags=['-DCPU_CAPABILITY_AVX2 -march=native -O3 -ffast-math -fno-finite-math-only -fopenmp'],
-    extra_ldflags=['/home/chunyuan/torch-inductor/torchdynamo/cbmynxnp4cqh66xm32doux5pu4uf2eav2ersh5kuapkudpyo2dpd.so']
 )
 call = module.call
 
