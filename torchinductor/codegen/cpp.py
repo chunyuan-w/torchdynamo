@@ -610,12 +610,17 @@ class KernelGroup:
         # not use BracesBuffer, so we have no good indicator of a C++ buffer atm.
         codecache_str = codecache_str.replace("#pragma CMT", "//")
         wrapper.define_kernel(kernel_name, codecache_str)
-        wrapper.add_kernel_name(kernel_name)
 
         kernel_path = "/home/chunyuan/torch-inductor/torchdynamo/cbmynxnp4cqh66xm32doux5pu4uf2eav2ersh5kuapkudpyo2dpd.so"
-        dlopen_str = f"auto kernel1_lib = dlopen(\"{kernel_path}\", RTLD_NOW);"
+        dlopen_str = f"auto {kernel_name}_lib = dlopen(\"{kernel_path}\", RTLD_NOW);"
         wrapper.writeline(dlopen_str)
         
+        assert_str = f"assert({kernel_name}_lib != nullptr);"
+        wrapper.writeline(assert_str)
+
+        kernel_load_str = f"void (*{kernel_name})(const float*, float*, float*, float*, float*, const long, const long) = (Kernel)dlsym({kernel_name}_lib, \"kernel\");"
+        wrapper.writeline(kernel_load_str)
+
         # generate the code to call this
         wrapper.writeline(
             "{}({});".format(kernel_name, ", ".join(call_args)),
