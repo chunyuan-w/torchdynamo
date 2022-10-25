@@ -178,7 +178,6 @@ class WrapperCodeGen(CodeGen):
         self.header = IndentedBuffer()
         self.prefix = IndentedBuffer()
         self.kernels = {}
-        self._kernel_name_list = []
         self.lines = []
         self.header.splice(
             f"""

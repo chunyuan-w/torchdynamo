@@ -589,8 +589,9 @@ class KernelGroup:
         if self.count == 0:
             return
 
-        arg_defs, call_args = self.args.cpp_argdefs()
+        arg_defs, arg_types, call_args = self.args.cpp_argdefs()
         arg_defs = ",\n".ljust(25).join(arg_defs)
+        arg_types = ",".join(arg_types)
         code = BracesBuffer()
         code.writelines([cpp_prefix(), "" f'extern "C" void kernel({arg_defs})'])
         with code.indent():
@@ -617,7 +618,7 @@ class KernelGroup:
         assert_str = f"assert({kernel_name}_lib != nullptr);"
         wrapper.writeline(assert_str)
 
-        kernel_type_str = f"void (*{kernel_name})(const float*, float*, float*, float*, float*, const long, const long);"
+        kernel_type_str = f"void (*{kernel_name})({arg_types});"
         wrapper.writeline(kernel_type_str)
 
         kernel_load_str = f"*(void **) (&{kernel_name}) = dlsym({kernel_name}_lib, \"kernel\");"
