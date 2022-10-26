@@ -234,14 +234,19 @@ class WrapperCodeGen(CodeGen):
             '''
             #include <dlfcn.h>
             #include <assert.h>            
-            at::Tensor call(at::Tensor arg0_1, at::Tensor arg1_1, at::Tensor arg2_1) {
             """
         )
         with self.prefix.indent():
             inp_len = len(V.graph.graph_inputs.keys())
             if inp_len != 0:
-                # TODO: handle arbitary input args unpack here
-                lhs = f"{', '.join(V.graph.graph_inputs.keys())}{'' if inp_len != 1 else ','}"
+                inputs_args = ['at::Tensor ' + input_key for input_key in V.graph.graph_inputs.keys()]
+                inputs_args = ', '.join(inputs_args) if inp_len != 1 else inputs_args[0]
+                # TODO: handle multiple output tensor case
+                # TODO: what if input or output is not tensor
+                self.prefix.writeline(
+                    f"at::Tensor call({inputs_args}) {{"
+                )
+                # lhs = f"{', '.join(V.graph.graph_inputs.keys())}{'' if inp_len != 1 else ','}"
                 # self.prefix.writeline(f"{lhs} = args;")
                 # self.prefix.writeline("args.clear()")
             for name in V.graph.randomness_seeds:
