@@ -137,7 +137,8 @@ def compile_fx_inner(
     )
 
     # aot autograd needs to know to pass in inputs as a list
-    # result._boxed_call = True
+    if not config.cpp_wrapper:
+        result._boxed_call = True
     return result
 
 
