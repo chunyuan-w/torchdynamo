@@ -3,6 +3,8 @@ import os
 # add some debug printouts
 debug = False
 
+cpp_wrapper = True
+
 # dead code elimination
 dce = False
 

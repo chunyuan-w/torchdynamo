@@ -12,7 +12,7 @@ from torch.utils._mode_utils import no_dispatch
 
 from . import config
 from . import ir
-from .codegen.wrapper import WrapperCodeGen
+from .codegen.wrapper import WrapperCodeGen, CppWrapperCodeGen
 from .exc import LoweringException
 from .exc import MissingOperatorWithDecomp
 from .exc import MissingOperatorWithoutDecomp
@@ -325,7 +325,7 @@ class GraphLowering(torch.fx.Interpreter):
     def codegen(self):
         from .scheduler import Scheduler
 
-        self.wrapper_code = WrapperCodeGen()
+        self.wrapper_code = CppWrapperCodeGen() if config.cpp_wrapper else WrapperCodeGen()
         self.scheduler = Scheduler(self.buffers)
         self.scheduler.codegen()
         return self.wrapper_code.generate()
@@ -337,7 +337,7 @@ class GraphLowering(torch.fx.Interpreter):
         code = self.codegen()
         if config.debug:
             print(code)
-
+        print(code)
         mod = PyCodeCache.load(code)
         for name, value in self.constants.items():
             setattr(mod, name, value)

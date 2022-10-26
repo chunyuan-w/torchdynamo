@@ -442,3 +442,177 @@ class WrapperCodeGen(CodeGen):
 
     def writeline(self, line):
         self.lines.append(line)
+
+
+class CppWrapperCodeGen(WrapperCodeGen):
+    """
+    The outer wrapper that calls the kernels.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._names_iter = count()
+        self.header = IndentedBuffer()
+        self.prefix = IndentedBuffer()
+        self.kernels = {}
+        self.lines = []
+        self.header.splice(
+            f"""
+                from ctypes import c_void_p, c_long
+                import torch
+                import random
+                from torch import empty_strided, as_strided, device
+                from {codecache.__name__} import AsyncCompile
+
+                aten = torch.ops.aten
+                async_compile = AsyncCompile()
+
+            """
+        )
+
+        if has_triton():
+            self.header.splice(
+                f"""
+                import triton
+                import triton.language as tl
+                from {config.inductor_import}.triton_ops.autotune import grid
+                from torch._C import _cuda_getCurrentRawStream as get_cuda_stream
+                """
+            )
+
+            if config.triton.convolution != "aten":
+                self.header.splice(
+                    f"""
+                    from {config.inductor_import}.triton_ops.conv_perf_model import early_config_prune
+                    from {config.inductor_import}.triton_ops.conv_perf_model import estimate_conv_time
+                    from {config.inductor_import}.triton_ops.autotune import conv_heuristics
+                    """
+                )
+
+            if config.triton.mm != "aten":
+                self.header.splice(
+                    f"""
+                    from {config.inductor_import}.triton_ops.autotune import mm_heuristics
+                    from {config.inductor_import}.triton_ops.autotune import mm_autotune
+                    """
+                )
+
+            if config.triton.use_bmm:
+                self.header.writeline(
+                    f"from {config.inductor_import}.triton_ops.batched_matmul import bmm_out as triton_bmm_out"
+                )
+
+        # TODO: handle arbitary input args instead of arg0_1 here
+        self.prefix.splice(
+            """
+            from torch.utils.cpp_extension import load_inline
+
+            wrapper = (
+            '''
+            #include <dlfcn.h>
+            #include <assert.h>            
+            """
+        )
+        with self.prefix.indent():
+            inp_len = len(V.graph.graph_inputs.keys())
+            if inp_len != 0:
+                inputs_args = ['at::Tensor ' + input_key for input_key in V.graph.graph_inputs.keys()]
+                inputs_args = ', '.join(inputs_args) if inp_len != 1 else inputs_args[0]
+                # TODO: what if input or output is not tensor
+                output_refs = [x.codegen_reference() for x in V.graph.graph_outputs]
+                if output_refs:
+                    if len(output_refs) == 1:
+                        output_types = "at::Tensor"
+                    else:
+                        output_return_type = "at::Tensor"
+                        output_return_types = [output_return_type] * len(output_refs)                  
+                        output_return_types = ", ".join(output_return_types)
+                        output_types = f"std::tuple<{output_return_types}>"
+                else:
+                    output_types = "void"                
+                
+                self.prefix.writeline(
+                    f"{output_types} call({inputs_args}) {{"
+                )
+                # lhs = f"{', '.join(V.graph.graph_inputs.keys())}{'' if inp_len != 1 else ','}"
+                # self.prefix.writeline(f"{lhs} = args;")
+                # self.prefix.writeline("args.clear()")
+            for name in V.graph.randomness_seeds:
+                self.prefix.writeline(
+                    f"torch.randint(2**31, size=(), dtype=torch.int64, out={name})"
+                )
+            V.graph.sizevars.codegen(self.prefix, V.graph.graph_inputs)
+
+        for name, value in V.graph.constants.items():
+            # include a hash so our code cache gives different constants different files
+            hashed = hashlib.sha256(repr(value).encode("utf-8")).hexdigest()
+            self.header.writeline(f"{name} = None  # {hashed}")
+
+        self.allocated = set()
+        self.freed = set()
+        self.write_get_cuda_stream = functools.lru_cache(None)(
+            self.write_get_cuda_stream
+        )
+
+    def codegen_free(self, buffer):
+        name = buffer.get_name()
+
+        # can be freed but not reused
+        if isinstance(buffer, ir.InputBuffer):
+            # self.writeline(f"del {name}")
+            return
+
+        if not self.can_reuse(buffer):
+            return
+        self.freed.add(name)
+
+        layout = buffer.get_layout()
+        if isinstance(layout, (ir.AliasedLayout, ir.MultiOutputLayout)):
+            self.writeline(f"del {name}")
+            return
+
+        self.writeline(FreeIfNotReusedLine(buffer))
+
+    @dynamo_utils.dynamo_timed
+    def generate(self):
+        result = IndentedBuffer()
+        result.splice(self.header)
+        result.splice(self.prefix)
+
+        out_names = V.graph.get_output_names()
+        with result.indent():
+            while (
+                self.lines
+                and isinstance(self.lines[-1], MemoryPlanningLine)
+                and self.lines[-1].node.name not in out_names
+            ):
+                # these lines will be pointless
+                self.lines.pop()
+
+            # codegen allocations in two passes
+            planning_state = MemoryPlanningState()
+            for i in range(len(self.lines)):
+                if isinstance(self.lines[i], MemoryPlanningLine):
+                    self.lines[i] = self.lines[i].plan(planning_state)
+
+            for line in self.lines:
+                if isinstance(line, MemoryPlanningLine):
+                    line.codegen(result)
+                else:
+                    result.writeline(line)
+            print("*" * 50, "result")
+            print(result)
+            output_refs = [x.codegen_reference() for x in V.graph.graph_outputs]
+            if output_refs:
+                if len(output_refs) == 1:
+                    result.writeline("return " + output_refs[0] + "; }''' )")
+                else:
+                    result.writeline("return std::make_tuple(" + ", ".join(output_refs) + "); }''' )")
+            else:
+                result.writeline("return; }''' )")
+            
+        result.writeline(f"module = load_inline(name='inline_extension', cpp_sources=[wrapper], functions=['call'], extra_cflags=['-DCPU_CAPABILITY_AVX2 -march=native -O3 -ffast-math -fno-finite-math-only -fopenmp'])")
+        result.writeline("call = module.call")
+        self.add_benchmark_harness(result)
+
+        return result.getvalue()
