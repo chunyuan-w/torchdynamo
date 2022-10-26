@@ -225,41 +225,21 @@ class WrapperCodeGen(CodeGen):
                     f"from {config.inductor_import}.triton_ops.batched_matmul import bmm_out as triton_bmm_out"
                 )
 
-        # TODO: handle arbitary input args instead of arg0_1 here
         self.prefix.splice(
             """
-            from torch.utils.cpp_extension import load_inline
 
-            wrapper = (
-            '''
-            #include <dlfcn.h>
-            #include <assert.h>            
+            async_compile.wait(globals())
+            del async_compile
+
+            def call(args):
             """
         )
         with self.prefix.indent():
             inp_len = len(V.graph.graph_inputs.keys())
             if inp_len != 0:
-                inputs_args = ['at::Tensor ' + input_key for input_key in V.graph.graph_inputs.keys()]
-                inputs_args = ', '.join(inputs_args) if inp_len != 1 else inputs_args[0]
-                # TODO: what if input or output is not tensor
-                output_refs = [x.codegen_reference() for x in V.graph.graph_outputs]
-                if output_refs:
-                    if len(output_refs) == 1:
-                        output_types = "at::Tensor"
-                    else:
-                        output_return_type = "at::Tensor"
-                        output_return_types = [output_return_type] * len(output_refs)                  
-                        output_return_types = ", ".join(output_return_types)
-                        output_types = f"std::tuple<{output_return_types}>"
-                else:
-                    output_types = "void"                
-                
-                self.prefix.writeline(
-                    f"{output_types} call({inputs_args}) {{"
-                )
-                # lhs = f"{', '.join(V.graph.graph_inputs.keys())}{'' if inp_len != 1 else ','}"
-                # self.prefix.writeline(f"{lhs} = args;")
-                # self.prefix.writeline("args.clear()")
+                lhs = f"{', '.join(V.graph.graph_inputs.keys())}{'' if inp_len != 1 else ','}"
+                self.prefix.writeline(f"{lhs} = args")
+                self.prefix.writeline("args.clear()")
             for name in V.graph.randomness_seeds:
                 self.prefix.writeline(
                     f"torch.randint(2**31, size=(), dtype=torch.int64, out={name})"
@@ -312,7 +292,7 @@ class WrapperCodeGen(CodeGen):
 
         # can be freed but not reused
         if isinstance(buffer, ir.InputBuffer):
-            # self.writeline(f"del {name}")
+            self.writeline(f"del {name}")
             return
 
         if not self.can_reuse(buffer):
@@ -371,19 +351,13 @@ class WrapperCodeGen(CodeGen):
                     line.codegen(result)
                 else:
                     result.writeline(line)
-            print("*" * 50, "result")
-            print(result)
+
             output_refs = [x.codegen_reference() for x in V.graph.graph_outputs]
             if output_refs:
-                if len(output_refs) == 1:
-                    result.writeline("return " + output_refs[0] + "; }''' )")
-                else:
-                    result.writeline("return std::make_tuple(" + ", ".join(output_refs) + "); }''' )")
+                result.writeline("return (" + ", ".join(output_refs) + ", )")
             else:
-                result.writeline("return; }''' )")
-            
-        result.writeline(f"module = load_inline(name='inline_extension', cpp_sources=[wrapper], functions=['call'], extra_cflags=['-DCPU_CAPABILITY_AVX2 -march=native -O3 -ffast-math -fno-finite-math-only -fopenmp'])")
-        result.writeline("call = module.call")
+                result.writeline("return ()")
+
         self.add_benchmark_harness(result)
 
         return result.getvalue()
