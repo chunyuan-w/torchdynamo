@@ -241,10 +241,21 @@ class WrapperCodeGen(CodeGen):
             if inp_len != 0:
                 inputs_args = ['at::Tensor ' + input_key for input_key in V.graph.graph_inputs.keys()]
                 inputs_args = ', '.join(inputs_args) if inp_len != 1 else inputs_args[0]
-                # TODO: handle multiple output tensor case
                 # TODO: what if input or output is not tensor
+                output_refs = [x.codegen_reference() for x in V.graph.graph_outputs]
+                if output_refs:
+                    if len(output_refs) == 1:
+                        output_types = "at::Tensor"
+                    else:
+                        output_return_type = "at::Tensor"
+                        output_return_types = [output_return_type] * len(output_refs)                  
+                        output_return_types = ", ".join(output_return_types)
+                        output_types = f"std::tuple<{output_return_types}>"
+                else:
+                    output_types = "void"                
+                
                 self.prefix.writeline(
-                    f"at::Tensor call({inputs_args}) {{"
+                    f"{output_types} call({inputs_args}) {{"
                 )
                 # lhs = f"{', '.join(V.graph.graph_inputs.keys())}{'' if inp_len != 1 else ','}"
                 # self.prefix.writeline(f"{lhs} = args;")
@@ -364,9 +375,13 @@ class WrapperCodeGen(CodeGen):
             print(result)
             output_refs = [x.codegen_reference() for x in V.graph.graph_outputs]
             if output_refs:
-                result.writeline("return " + ", ".join(output_refs) + "; }''' )")
+                if len(output_refs) == 1:
+                    result.writeline("return " + output_refs[0] + "; }''' )")
+                else:
+                    result.writeline("return std::make_tuple(" + ", ".join(output_refs) + "); }''' )")
             else:
-                result.writeline("return () }''' )")
+                result.writeline("return; }''' )")
+            
         result.writeline(f"module = load_inline(name='inline_extension', cpp_sources=[wrapper], functions=['call'], extra_cflags=['-DCPU_CAPABILITY_AVX2 -march=native -O3 -ffast-math -fno-finite-math-only -fopenmp'])")
         result.writeline("call = module.call")
         self.add_benchmark_harness(result)
