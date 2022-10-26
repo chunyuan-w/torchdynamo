@@ -338,9 +338,7 @@ class KernelArgs:
         arg_defs = []
         arg_types = []
         # TODO: what if not float?
-        ptr_type = "(float*)" if config.cpp_wrapper else "v_void_p"
-        # TODO: what is c_long corresponds to?
-        sizevars_type = "" if config.cpp_wrapper else "c_long"
+        ptr_type = "(float*)" if config.cpp_wrapper else "c_void_p"
         for inplaced in unique(self.inplace_buffers.values()):
             outer = inplaced.other_names[0]
             inner = inplaced.inner_name
@@ -366,7 +364,8 @@ class KernelArgs:
         for outer, inner in self.sizevars.items():
             arg_defs.append(f"const {INDEX_TYPE} {inner}")
             arg_types.append(f"const {INDEX_TYPE}")
-            call_args.append(f"{sizevars_type}{outer}")
+            # TODO: what is c_long corresponds to?
+            call_args.append(f"{outer}" if config.cpp_wrapper else f"c_long({outer})")
         return arg_defs, arg_types, call_args
 
     def python_argdefs(self):

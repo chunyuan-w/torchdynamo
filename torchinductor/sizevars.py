@@ -461,7 +461,7 @@ class SizeVarAllocator(object):
 
         @functools.lru_cache(None)
         def sizeof(name):
-            code.writeline(f"auto {name}_size = {name}.sizes();" if config.cpp_wrapper else f"auto {name}_size = {name}.sizes();")
+            code.writeline(f"auto {name}_size = {name}.sizes();" if config.cpp_wrapper else f"{name}_size = {name}.size()")
             return f"{name}_size"
 
         @functools.lru_cache(None)
