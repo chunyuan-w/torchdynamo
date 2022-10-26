@@ -561,7 +561,8 @@ class CppScheduling:
         kernel_group.finalize_kernel(kernel, scheduler)
 
     def flush(self):
-        self.kernel_group.codegen_define_and_call(V.graph.wrapper_code)
+        codegen_func = self.kernel_group.cpp_codegen_define_and_call if config.cpp_wrapper else self.kernel_group.codegen_define_and_call
+        codegen_func(V.graph.wrapper_code)
         self.kernel_group = KernelGroup()
 
 
@@ -585,6 +586,38 @@ class KernelGroup:
         new_kernel.codegen_loops(code, ws)
 
     def codegen_define_and_call(self, wrapper):
+        self.stack.close()
+        if self.count == 0:
+            return
+
+        arg_defs, _, call_args = self.args.cpp_argdefs()
+        arg_defs = ",\n".ljust(25).join(arg_defs)
+        code = BracesBuffer()
+        code.writelines([cpp_prefix(), "" f'extern "C" void kernel({arg_defs})'])
+        with code.indent():
+            for old, new in self.args.aliases():
+                code.writeline(f"auto {old} = {new};")
+            code.splice(self.loops_code)
+
+        codecache_def = IndentedBuffer()
+        codecache_def.writeline("async_compile.cpp('''")
+        codecache_def.splice(code)
+        codecache_def.writeline("''')")
+
+        kernel_name = wrapper.next_kernel_name()
+        codecache_str = codecache_def.getvalue()
+        # TODO(voz): Ostensibly, we should not need this. But there are cases where C++ codegen does
+        # not use BracesBuffer, so we have no good indicator of a C++ buffer atm.
+        codecache_str = codecache_str.replace("#pragma CMT", "//")
+        wrapper.define_kernel(kernel_name, codecache_str)
+
+        # generate the code to call this
+        wrapper.writeline(
+            "{}({})".format(kernel_name, ", ".join(call_args)),
+        )
+
+
+    def cpp_codegen_define_and_call(self, wrapper):
         self.stack.close()
         if self.count == 0:
             return
