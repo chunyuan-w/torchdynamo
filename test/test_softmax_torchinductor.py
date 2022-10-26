@@ -6,6 +6,7 @@ import numpy as np
 # import torch._dynamo
 import torchdynamo
 from torch._inductor import config
+from torchdynamo.testing import same
 
 config.cpp.simdlen = 8
 config.dynamic_shapes = True
@@ -43,7 +44,8 @@ class MHAScoresCalculation(nn.Module):
 		mat1 = mat1 / math.sqrt(self.dim_per_head)
 		qk = torch.matmul(mat1, mat2.transpose(2, 3))
 		scores = qk + bias
-		return self.softmax(scores)
+		return self.softmax(scores), scores
+		# return self.softmax(scores)
 
 
 
@@ -57,7 +59,8 @@ with torch.no_grad():
 	dynamo_result = optimized_mod(mat1, mat2, bias)
 	ref_result = mha(mat1, mat2, bias)
 
-	np.testing.assert_allclose(dynamo_result.numpy(), ref_result.numpy(), atol=1e-6)
+	assert same(dynamo_result, ref_result)
+	# np.testing.assert_allclose(dynamo_result.numpy(), ref_result.numpy(), atol=1e-6)
 
 
 
