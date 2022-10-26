@@ -127,8 +127,8 @@ class FreeIfNotReusedLine(MemoryPlanningLine):
 
     def codegen(self, code: IndentedBuffer):
         assert self.node.get_name() not in V.graph.removed_buffers
-        if not self.is_reused:
-            code.writeline(f"del {self.node.get_name()}")
+        # if not self.is_reused:
+            # code.writeline(f"del {self.node.get_name()}")
 
 
 @dataclasses.dataclass
@@ -234,7 +234,7 @@ class WrapperCodeGen(CodeGen):
             '''
             #include <dlfcn.h>
             #include <assert.h>            
-            at::Tensor call(at::Tensor arg0_1) {
+            at::Tensor call(at::Tensor arg0_1, at::Tensor arg1_1, at::Tensor arg2_1) {
             """
         )
         with self.prefix.indent():
