@@ -304,7 +304,8 @@ class WrapperCodeGen(CodeGen):
 
         # can be freed but not reused
         if isinstance(buffer, ir.InputBuffer):
-            self.writeline(f"del {name}")
+            if not config.cpp_wrapper:
+                self.writeline(f"del {name}")
             return
 
         if not self.can_reuse(buffer):
@@ -456,41 +457,12 @@ class CppWrapperCodeGen(WrapperCodeGen):
             """
         )
 
-        if has_triton():
-            self.header.splice(
-                f"""
-                import triton
-                import triton.language as tl
-                from {config.inductor_import}.triton_ops.autotune import grid
-                from torch._C import _cuda_getCurrentRawStream as get_cuda_stream
-                """
-            )
-
-            if config.triton.convolution != "aten":
-                self.header.splice(
-                    f"""
-                    from {config.inductor_import}.triton_ops.conv_perf_model import early_config_prune
-                    from {config.inductor_import}.triton_ops.conv_perf_model import estimate_conv_time
-                    from {config.inductor_import}.triton_ops.autotune import conv_heuristics
-                    """
-                )
-
-            if config.triton.mm != "aten":
-                self.header.splice(
-                    f"""
-                    from {config.inductor_import}.triton_ops.autotune import mm_heuristics
-                    from {config.inductor_import}.triton_ops.autotune import mm_autotune
-                    """
-                )
-
-            if config.triton.use_bmm:
-                self.header.writeline(
-                    f"from {config.inductor_import}.triton_ops.batched_matmul import bmm_out as triton_bmm_out"
-                )
-
         # TODO: handle arbitary input args instead of arg0_1 here
         self.prefix.splice(
             """
+            async_compile.wait(globals())
+            del async_compile
+
             from torch.utils.cpp_extension import load_inline
 
             wrapper = (
@@ -540,24 +512,6 @@ class CppWrapperCodeGen(WrapperCodeGen):
             self.write_get_cuda_stream
         )
 
-    def codegen_free(self, buffer):
-        name = buffer.get_name()
-
-        # can be freed but not reused
-        if isinstance(buffer, ir.InputBuffer):
-            # self.writeline(f"del {name}")
-            return
-
-        if not self.can_reuse(buffer):
-            return
-        self.freed.add(name)
-
-        layout = buffer.get_layout()
-        if isinstance(layout, (ir.AliasedLayout, ir.MultiOutputLayout)):
-            self.writeline(f"del {name}")
-            return
-
-        self.writeline(FreeIfNotReusedLine(buffer))
 
     @dynamo_utils.dynamo_timed
     def generate(self):
@@ -586,8 +540,6 @@ class CppWrapperCodeGen(WrapperCodeGen):
                     line.codegen(result)
                 else:
                     result.writeline(line)
-            print("*" * 50, "result")
-            print(result)
             output_refs = [x.codegen_reference() for x in V.graph.graph_outputs]
             if output_refs:
                 if len(output_refs) == 1:
