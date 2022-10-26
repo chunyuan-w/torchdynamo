@@ -55,11 +55,23 @@ def make_buffer_allocation(buffer):
     shape = tuple(buffer.get_size())
     stride = tuple(buffer.get_stride())
     return (
+        f"{buffer.get_name()} = empty_strided("
+        f"{V.graph.sizevars.codegen_shape_tuple(shape)}, "
+        f"{V.graph.sizevars.codegen_shape_tuple(stride)}, "
+        f"device='{device.type}', dtype={dtype})"
+    )
+
+
+def make_cpp_buffer_allocation(buffer):
+    device = buffer.get_device()
+    dtype = buffer.get_dtype()
+    shape = tuple(buffer.get_size())
+    stride = tuple(buffer.get_stride())
+    return (
         f"auto {buffer.get_name()} = at::empty_strided("
         f"{V.graph.sizevars.codegen_shape_tuple(shape)}, "
         f"{V.graph.sizevars.codegen_shape_tuple(stride)}); "
     )
-
 
 class MemoryPlanningState:
     def __init__(self):
@@ -110,7 +122,7 @@ class AllocateLine(MemoryPlanningLine):
 
     def codegen(self, code: IndentedBuffer):
         assert self.node.get_name() not in V.graph.removed_buffers
-        code.writeline(make_buffer_allocation(self.node))
+        code.writeline(make_cpp_buffer_allocation(self.node) if config.cpp_wrapper else make_buffer_allocation(self.node))
 
 
 @dataclasses.dataclass
@@ -127,8 +139,8 @@ class FreeIfNotReusedLine(MemoryPlanningLine):
 
     def codegen(self, code: IndentedBuffer):
         assert self.node.get_name() not in V.graph.removed_buffers
-        # if not self.is_reused:
-            # code.writeline(f"del {self.node.get_name()}")
+        if not self.is_reused and not config.cpp_wrapper:
+            code.writeline(f"del {self.node.get_name()}")
 
 
 @dataclasses.dataclass
