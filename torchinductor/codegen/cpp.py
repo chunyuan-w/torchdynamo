@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict
 from typing import List
 
+import os
 import sympy
 import torch
 from torch._prims_common import is_float_dtype
@@ -21,6 +22,7 @@ from .common import IndentedBuffer
 from .common import Kernel
 from .common import KernelArgs
 from .common import OpOverrides
+from ..codecache import code_hash, cache_dir, cpp_compile_command
 
 DTYPE_TO_CPP = {
     torch.float32: "float",
@@ -644,11 +646,7 @@ class KernelGroup:
         codecache_str = codecache_str.replace("#pragma CMT", "//")
         wrapper.define_kernel(kernel_name, codecache_str)
 
-        # kernel_path = "/home/chunyuan/torch-inductor/torchdynamo/cbmynxnp4cqh66xm32doux5pu4uf2eav2ersh5kuapkudpyo2dpd.so"
-        # kernel_path = "/tmp/torchinductor_chunyuan/bm/cbmynxnp4cqh66xm32doux5pu4uf2eav2ersh5kuapkudpyo2dpd.so"
         # TODO: this duplicates with CodeCache logic
-        from ..codecache import code_hash, cache_dir, cpp_compile_command
-        import os
         ext = "so"
         extra = cpp_compile_command("i", "o")
         # TODO: \n is required to match with the CodeCache behavior
@@ -657,19 +655,11 @@ class KernelGroup:
         subdir = os.path.join(cache_dir(), basename[1:3])
         # TODO: use a func to load it during runtime
         kernel_path = os.path.join(subdir, f"{basename}.{ext}")
-        print(kernel_path)
 
-        dlopen_str = f"auto {kernel_name}_lib = dlopen(\"{kernel_path}\", RTLD_NOW);"
-        wrapper.writeline(dlopen_str)
-        
-        assert_str = f"assert({kernel_name}_lib != nullptr);"
-        wrapper.writeline(assert_str)
-
-        kernel_type_str = f"void (*{kernel_name})({arg_types});"
-        wrapper.writeline(kernel_type_str)
-
-        kernel_load_str = f"*(void **) (&{kernel_name}) = dlsym({kernel_name}_lib, \"kernel\");"
-        wrapper.writeline(kernel_load_str)
+        wrapper.writeline(f"auto {kernel_name}_lib = dlopen(\"{kernel_path}\", RTLD_NOW);")
+        wrapper.writeline(f"assert({kernel_name}_lib != nullptr);")
+        wrapper.writeline(f"void (*{kernel_name})({arg_types});")
+        wrapper.writeline(f"*(void **) (&{kernel_name}) = dlsym({kernel_name}_lib, \"kernel\");")
 
         # generate the code to call this
         wrapper.writeline(
