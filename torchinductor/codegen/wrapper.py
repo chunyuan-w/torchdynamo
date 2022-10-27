@@ -38,6 +38,7 @@ def buffer_reuse_key(node: ir.Buffer):
 
 
 def make_buffer_reuse(old, new):
+    # TODO: check cpp wrapper here
     assert old.get_dtype() == new.get_dtype()
     if old.get_size() == new.get_size() and old.get_stride() == new.get_stride():
         return f"{new.get_name()} = {old.get_name()}; del {old.get_name()}"
@@ -177,7 +178,8 @@ class FreeLine(MemoryPlanningLine):
 
     def codegen(self, code: IndentedBuffer):
         assert self.node.get_name() not in V.graph.removed_buffers
-        code.writeline(f"del {self.node.get_name()}")
+        if not config.cpp_wrapper:
+            code.writeline(f"del {self.node.get_name()}")
 
 
 class NullLine(MemoryPlanningLine):
@@ -319,7 +321,8 @@ class WrapperCodeGen(CodeGen):
 
         layout = buffer.get_layout()
         if isinstance(layout, (ir.AliasedLayout, ir.MultiOutputLayout)):
-            self.writeline(f"del {name}")
+            if not config.cpp_wrapper:
+                self.writeline(f"del {name}")
             return
 
         self.writeline(FreeIfNotReusedLine(buffer))
