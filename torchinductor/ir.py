@@ -2422,10 +2422,14 @@ class ExternKernelOut(ExternKernel):
         else:
             if config.cpp_wrapper:
                 # TODO: is it true that out is always at position 0?
-                args.insert(0, self.codegen_reference() )
+                args.insert(0, self.codegen_reference())
             else:
                 args.append(f"out={self.codegen_reference()}")
-        wrapper.writeline(f"{self.kernel}({', '.join(args)});" if config.cpp_wrapper else f"{self.kernel}({', '.join(args)})")
+        wrapper.writeline(
+            f"{self.kernel}({', '.join(args)});"
+            if config.cpp_wrapper
+            else f"{self.kernel}({', '.join(args)})"
+        )
 
     def __init__(self, layout, inputs, constant_args=(), kwargs={}, output_view=None):
         super().__init__(

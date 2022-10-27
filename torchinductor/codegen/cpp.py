@@ -1,17 +1,20 @@
 import contextlib
 import dataclasses
 import functools
+import os
 from pathlib import Path
 from typing import Dict
 from typing import List
 
-import os
 import sympy
 import torch
 from torch._prims_common import is_float_dtype
 
 from .. import codecache
 from .. import config
+from ..codecache import cache_dir
+from ..codecache import code_hash
+from ..codecache import cpp_compile_command
 from ..utils import sympy_product
 from ..virtualized import V
 from ..virtualized import ops
@@ -22,7 +25,6 @@ from .common import IndentedBuffer
 from .common import Kernel
 from .common import KernelArgs
 from .common import OpOverrides
-from ..codecache import code_hash, cache_dir, cpp_compile_command
 
 DTYPE_TO_CPP = {
     torch.float32: "float",
@@ -563,7 +565,11 @@ class CppScheduling:
         kernel_group.finalize_kernel(kernel, scheduler)
 
     def flush(self):
-        codegen_func = self.kernel_group.cpp_codegen_define_and_call if config.cpp_wrapper else self.kernel_group.codegen_define_and_call
+        codegen_func = (
+            self.kernel_group.cpp_codegen_define_and_call
+            if config.cpp_wrapper
+            else self.kernel_group.codegen_define_and_call
+        )
         codegen_func(V.graph.wrapper_code)
         self.kernel_group = KernelGroup()
 
@@ -618,7 +624,6 @@ class KernelGroup:
             "{}({})".format(kernel_name, ", ".join(call_args)),
         )
 
-
     def cpp_codegen_define_and_call(self, wrapper):
         self.stack.close()
         if self.count == 0:
@@ -650,16 +655,20 @@ class KernelGroup:
         ext = "so"
         extra = cpp_compile_command("i", "o")
         # TODO: \n is required to match with the CodeCache behavior
-        source_code = '\n' + code.getvalue()
+        source_code = "\n" + code.getvalue()
         basename = code_hash(source_code + extra)
         subdir = os.path.join(cache_dir(), basename[1:3])
         # TODO: use a func to load it during runtime
         kernel_path = os.path.join(subdir, f"{basename}.{ext}")
 
-        wrapper.writeline(f"auto {kernel_name}_lib = dlopen(\"{kernel_path}\", RTLD_NOW);")
+        wrapper.writeline(
+            f'auto {kernel_name}_lib = dlopen("{kernel_path}", RTLD_NOW);'
+        )
         wrapper.writeline(f"assert({kernel_name}_lib != nullptr);")
         wrapper.writeline(f"void (*{kernel_name})({arg_types});")
-        wrapper.writeline(f"*(void **) (&{kernel_name}) = dlsym({kernel_name}_lib, \"kernel\");")
+        wrapper.writeline(
+            f'*(void **) (&{kernel_name}) = dlsym({kernel_name}_lib, "kernel");'
+        )
 
         # generate the code to call this
         wrapper.writeline(
